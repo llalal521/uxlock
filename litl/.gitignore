@@ -1,0 +1,15 @@
+lib/
+obj/
+*~
+\#*\#
+lib*.sh
+include/topology.h
+result
+static_bench
+static_check
+tail_*
+lat_*
+*.eps
+tmp
+bin/
+.DS_Store

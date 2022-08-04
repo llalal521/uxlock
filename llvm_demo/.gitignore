@@ -1,0 +1,5 @@
+*.bc
+*.s
+uta_pass/*.so
+result
+cri_bench
