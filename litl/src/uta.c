@@ -23,7 +23,7 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     10000000000
-#define SHORT_BATCH_THRESHOLD   100000
+#define SHORT_BATCH_THRESHOLD   65534 /* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	10000
@@ -33,6 +33,7 @@
 #define IS_UX_THREAD 1
 __thread int nested_level = 0;
 __thread unsigned int uxthread = NOT_UX_THREAD;
+extern __thread unsigned int cur_thread_id;
 
 __thread int cur_loc = -1;
 __thread int stack_pos = -1;
@@ -201,7 +202,6 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 static int __uta_lock_ux(uta_mutex_t * impl, uta_node_t * me)
 {
 	uta_node_t *tail;
-
 	me->next = NULL;
 	me->spin = 0;
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);

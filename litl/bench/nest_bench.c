@@ -13,19 +13,20 @@
 #include <sys/time.h>
 #include <topology.h>
 #include <papi.h>
-#define THD_NUM 16
+#define THD_NUM 10
 
-#define PLAT_CPU_NUM 16
-#define AVALIABLE_CORE_NUM	16
-int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+#define PLAT_CPU_NUM 40
+#define AVALIABLE_CORE_NUM	10
+int avaliable_core[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 };
+
 // #endif
 
 #ifdef	LIBUXACTIVE_INTERFACE
 #include "libuxactive.h"
 #endif
 
-#ifdef	LIBUTAL_INTERFACE
-#include "libutal.h"
+#ifdef	LIBUTA_INTERFACE
+#include "libuta.h"
 #endif
 
 #ifdef	LIBUXSHFL_INTERFACE
@@ -92,6 +93,7 @@ __thread long long tt_startp, tt_endp;
 uint64_t *record_all[THD_NUM];
 #define LATENCY_RECORD 100000000
 __thread uint64_t record_latency[LATENCY_RECORD] = { 0 };
+
 __thread uint64_t record_cnt;
 uint64_t *global_cnt[THD_NUM][5];
 __thread uint64_t *global_cnt_0;
@@ -147,19 +149,18 @@ void *thread_routine_mode_nop(void *arg)
 	int ldelay = delay;
 	double wait;
 	int prevType;
-	void *local_variables = arg;
-	uint64_t core_id = *(uint64_t *) arg;
-	tid = core_id;
+	uint64_t tid = *(uint64_t *) arg;
+	int core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+
 	int count = 0;
 	uint64_t duration;
 	uint64_t local_possibility = possibility * 10;
 	int type;
-
 #ifdef UX_PRIORITY
-	if(tid / 4 == 0)
-        set_ux(1);
+	if (tid / 4 == 0)
+		set_ux(1);
 	else
-        set_ux(0);
+		set_ux(0);
 #endif
 
 	cpu_set_t mask;
@@ -190,240 +191,62 @@ void *thread_routine_mode_nop(void *arg)
 	global_cnt[tid][3] = global_cnt_3;
 	global_cnt[tid][4] = global_cnt_4;
 	pthread_barrier_wait(&sig_start);
-	if (mode == 0) {
-		while (1) {
-			/* r74x motivation case */
-			if (judge_numa_node(core_id) == 0) {
-				if (core_id == 0) {
-					pthread_mutex_lock(&lock_A);
-					pthread_mutex_lock(&lock_B);
-					*global_cnt_1 = *global_cnt_1 + 1;
-					access_variables
-					    (g_shared_variables_memory_area_A,
-					     g_number_of_shared_variables);
-					access_variables
-					    (g_shared_variables_memory_area_B,
-					     g_number_of_shared_variables);
-					access_variables(local_variables,
-							 l_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_B);
-					pthread_mutex_unlock(&lock_A);
-				} else {
-					pthread_mutex_lock(&lock_A);
-					*global_cnt_0 = *global_cnt_0 + 1;
-					access_variables
-					    (g_shared_variables_memory_area_A,
-					     g_number_of_shared_variables);
-					access_variables(local_variables,
-							 l_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_A);
-				}
-			} else {
-				pthread_mutex_lock(&lock_B);
-				*global_cnt_2 = *global_cnt_2 + 1;
+
+	while (1) {
+		unsigned random = xor_random();
+		if (tid / 4 == 0) {
+			if (random % 1000 < possibility) {
+				tt_startp = PAPI_get_real_cyc();
+				pthread_mutex_lock(&lock_A);
+				tt_endp = PAPI_get_real_cyc();
+				*global_cnt_0 = *global_cnt_0 + 1;
+				access_variables
+				    (g_shared_variables_memory_area_A,
+				     g_number_of_shared_variables);
 				access_variables
 				    (g_shared_variables_memory_area_B,
 				     g_number_of_shared_variables);
-				access_variables(local_variables,
-						 l_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_B);
+				pthread_mutex_unlock(&lock_A);
+				duration = tt_endp - tt_startp;
+				record_latency[record_cnt % LATENCY_RECORD] =
+				    duration;
+				record_cnt++;
+				goto out1;
 			}
-			wait = ldelay;
-			while (wait--)
-				NOP7;
-		}
-	} else if (mode == 1) {
-		while (1) {
-			pthread_mutex_lock(&lock_A);
+			pthread_mutex_lock(&lock_B);
 			*global_cnt_1 = *global_cnt_1 + 1;
 			access_variables
 			    (g_shared_variables_memory_area_A,
 			     g_number_of_shared_variables);
-			access_variables(local_variables,
-					 l_number_of_shared_variables);
+			access_variables
+			    (g_shared_variables_memory_area_B,
+			     g_number_of_shared_variables);
+			pthread_mutex_unlock(&lock_B);
+		} else {
+			tt_startp = PAPI_get_real_cyc();
+			pthread_mutex_lock(&lock_A);
+			pthread_mutex_lock(&lock_B);
+			tt_endp = PAPI_get_real_cyc();
+			*global_cnt_3 = *global_cnt_3 + 1;
+			access_variables
+			    (g_shared_variables_memory_area_A,
+			     g_number_of_shared_variables);
+			access_variables
+			    (g_shared_variables_memory_area_B,
+			     g_number_of_shared_variables);
+			pthread_mutex_unlock(&lock_B);
 			pthread_mutex_unlock(&lock_A);
+			duration = tt_endp - tt_startp;
+			record_latency[record_cnt % LATENCY_RECORD] = duration;
+			record_cnt++;
+			goto out1;
+		}
+ out1:
+		wait = ldelay;
+		while (wait--)
+			NOP7;
+	}
 
-			wait = ldelay;
-			while (wait--)
-				NOP7;
-		}
-	} else if (mode == 2) {
-		while (1) {
-			unsigned random = xor_random();
-			if(tid / 4 == 0){
-				if(random % 1000 < possibility){
-					tt_startp =  PAPI_get_real_cyc();
-					pthread_mutex_lock(&lock_A);
-					tt_endp =  PAPI_get_real_cyc();
-					*global_cnt_0 = *global_cnt_0 + 1;
-					access_variables
-				    	(g_shared_variables_memory_area_A,
-				    	 g_number_of_shared_variables);
-					access_variables
-				    	(g_shared_variables_memory_area_B,
-				    	 g_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_A);
-					duration =  tt_endp - tt_startp;
-            		record_latency[record_cnt % LATENCY_RECORD] = duration;
-            		record_cnt++;
-					goto out1;
-				}
-				pthread_mutex_lock(&lock_B);
-				*global_cnt_1 = *global_cnt_1 + 1;
-				access_variables
-				    (g_shared_variables_memory_area_A,
-				     g_number_of_shared_variables);
-				access_variables
-				    (g_shared_variables_memory_area_B,
-				     g_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_B);
-			}
-			else{
-				tt_startp =  PAPI_get_real_cyc();
-				pthread_mutex_lock(&lock_A);
-				pthread_mutex_lock(&lock_B);
-				tt_endp =  PAPI_get_real_cyc();
-				*global_cnt_3 = *global_cnt_3 + 1;
-				access_variables
-				    (g_shared_variables_memory_area_A,
-				     g_number_of_shared_variables);
-				access_variables
-				    (g_shared_variables_memory_area_B,
-				     g_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_B);
-				pthread_mutex_unlock(&lock_A);
-			}
-out1:
-			wait = ldelay;
-			while (wait--)
-				NOP7;
-		}
-	}
-	else if(mode == 3){
-		while(1){
-			if(tid / 1 == 0){
-				tt_startp =  PAPI_get_real_cyc();
-				pthread_mutex_lock(&lock_A);
-				tt_endp =  PAPI_get_real_cyc();
-				*global_cnt_2 = *global_cnt_2 + 1;
-				access_variables
-					(g_shared_variables_memory_area_B,
-					g_number_of_shared_variables);
-				access_variables
-					(local_variables,
-					l_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_A);
-				duration =  tt_endp - tt_startp;
-            	record_latency[record_cnt % LATENCY_RECORD] = duration;
-            	record_cnt++;
-			}
-			else if(tid / 12 == 0){
-				pthread_mutex_lock(&lock_B);
-				*global_cnt_1 = *global_cnt_1 + 1;
-				access_variables
-					(g_shared_variables_memory_area_B,
-					g_number_of_shared_variables);
-				access_variables
-					(local_variables,
-					l_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_B);
-			}
-			else{
-				pthread_mutex_lock(&lock_A);
-				pthread_mutex_lock(&lock_B);
-				tt_endp =  PAPI_get_real_cyc();
-				*global_cnt_3 = *global_cnt_3 + 1;
-				access_variables
-				    (g_shared_variables_memory_area_A,
-				     g_number_of_shared_variables);
-				access_variables
-				    (g_shared_variables_memory_area_B,
-				     g_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_B);
-				pthread_mutex_unlock(&lock_A);
-			}
-			wait = ldelay;
-			while (wait--)
-				NOP7;
-		}
-	}  else if (mode == 4) {
-		// Not obvious: each lock's competitor is too small
-		while (1) {
-			type = core_id % 3;
-			unsigned random = xor_random();
-			if (random % 1000 < possibility) {
-				tt_startp =  PAPI_get_real_cyc();
-				pthread_mutex_lock(&lock_A);
-				pthread_mutex_lock(&lock_B);
-				pthread_mutex_lock(&lock_C);
-				tt_endp =  PAPI_get_real_cyc();
-				*global_cnt_0 = *global_cnt_0 + 3;
-				access_variables
-				    (g_shared_variables_memory_area_A,
-				     g_number_of_shared_variables);
-				access_variables
-				    (g_shared_variables_memory_area_B,
-				     g_number_of_shared_variables);
-				access_variables
-				    (g_shared_variables_memory_area_C,
-				     g_number_of_shared_variables);
-				access_variables(local_variables,
-						 l_number_of_shared_variables);
-				pthread_mutex_unlock(&lock_C);
-				pthread_mutex_unlock(&lock_B);
-				pthread_mutex_unlock(&lock_A);
-			} else {
-				switch (type) {
-				case 0:
-					tt_startp =  PAPI_get_real_cyc();
-					pthread_mutex_lock(&lock_B);
-					tt_endp =  PAPI_get_real_cyc();
-					*global_cnt_2 = *global_cnt_2 + 1;
-					access_variables
-					    (g_shared_variables_memory_area_B,
-					     g_number_of_shared_variables);
-					access_variables
-					    (local_variables,
-					     l_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_B);
-					break;
-				case 1:
-					tt_startp =  PAPI_get_real_cyc();
-					pthread_mutex_lock(&lock_A);
-					tt_endp =  PAPI_get_real_cyc();
-					*global_cnt_1 = *global_cnt_1 + 1;
-					access_variables
-					    (g_shared_variables_memory_area_A,
-					     g_number_of_shared_variables);
-					access_variables
-					    (local_variables,
-					     l_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_A);
-					break;
-				case 2:
-					tt_startp =  PAPI_get_real_cyc();
-					pthread_mutex_lock(&lock_C);
-					tt_endp =  PAPI_get_real_cyc();
-					*global_cnt_3 = *global_cnt_3 + 1;
-					access_variables
-					    (g_shared_variables_memory_area_C,
-					     g_number_of_shared_variables);
-					access_variables
-					    (local_variables,
-					     l_number_of_shared_variables);
-					pthread_mutex_unlock(&lock_C);
-					break;
-				}
-			}
-			duration =  tt_endp - tt_startp;
-            record_latency[record_cnt % LATENCY_RECORD] =
-                duration;
-            record_cnt++;
-			wait = ldelay;
-			while (wait--)
-				NOP7;
-		}
-	}
 	return 0;
 }
 
@@ -452,7 +275,6 @@ int main(int argc, char **argv)
 	uint64_t *local_ptr;
 	double duration, ops_per_sec;
 	pthread_t *tid;
-	int core_num = 0;
 	int num = 0;
 	int command;
 	int sleep_time;
@@ -500,9 +322,7 @@ int main(int argc, char **argv)
 			break;
 		}
 	}
-
 	thread_entry = thread_routine_mode_nop;
-
 #ifdef HMCS_SET_RELEASE
 	set_reorder_threshold(release);
 #endif
@@ -529,9 +349,8 @@ int main(int argc, char **argv)
 		local_ptr =
 		    (uint64_t *) cache_allocate(l_number_of_shared_variables *
 						sizeof(cache_line_t));
-		*local_ptr = (uint64_t) avaliable_core[i % THD_NUM];
+		*local_ptr = (uint64_t) i;
 		pthread_create(&tid[i], NULL, thread_entry, local_ptr);
-		core_num++;
 	}
 	pthread_barrier_wait(&sig_start);
 
@@ -539,17 +358,16 @@ int main(int argc, char **argv)
 	clock_gettime(CLOCK_MONOTONIC, &tt_start);
 	sleep(sleep_time);
 	clock_gettime(CLOCK_MONOTONIC, &tt_end);
-
-	for (i = 0; i < nb_threads; i++){
-		result[i] = *global_cnt[i][0] ;
+	for (i = 0; i < nb_threads; i++) {
+		result[i] = *global_cnt[i][0];
 		num += result[i];
 	}
 	printf("%d\n", num);
 	for (i = 0; i < nb_threads; i++) {
-        printf("core %ld cnt %ld\n", i, result[i]);
-        for (int j = 0; j < result[i]; j++){
-           printf("%lu\n", record_all[i][j]);
-        }
-    }
+		printf("core %ld cnt %ld\n", i, result[i]);
+		for (int j = 0; j < result[i]; j++) {
+			printf("%lu\n", record_all[i][j]);
+		}
+	}
 	return 0;
 }

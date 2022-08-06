@@ -16,8 +16,7 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN=thbench check bench cri_bench cri_bench_uta ux_cs_bench   uxactive_bench    cs_bench  \
-	csupper_bench nest_bench uta_bench
+BIN= bench  uxactive_bench nest_bench uta_bench nest_bench_uta
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
 
@@ -56,26 +55,8 @@ include/topology.h: include/topology.in
 	chmod a+x $@
 
 # micro-benchmarks
-$(BINDIR)/thbench: bench/thbench.c $(DIR) $(SOS)
-	gcc bench/thbench.c -pthread -O3 -Iinclude/ -g  -o $(BINDIR)/thbench
-
-$(BINDIR)/ux_cs_bench: bench/ux_cs_bench.c $(DIR) $(SOS)
-	gcc bench/ux_cs_bench.c -lpapi -pthread -O3 -Iinclude/ -g  -o $(BINDIR)/ux_cs_bench
-
-$(BINDIR)/cri_bench: bench/cri_bench.c $(DIR) $(SOS)
-	gcc bench/cri_bench.c -lpapi -pthread -O3 -Iinclude/ -g -o $(BINDIR)/cri_bench
-
-$(BINDIR)/cri_bench_uta: bench/cri_bench.c $(DIR) $(SOS)
-	gcc bench/cri_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE   -L./lib -luta_original -g -o $(BINDIR)/cri_bench_uta
-
 $(BINDIR)/ux_cs_bench_uta: bench/ux_cs_bench.c $(DIR) $(SOS)
 	gcc bench/ux_cs_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE   -L./lib -luta_original -g -o $(BINDIR)/ux_cs_bench_uta
-
-$(BINDIR)/csupper_bench: bench/csbench.c $(DIR) $(SOS)
-	gcc  bench/csbench.c -lpapi -pthread -O3 -Iinclude/ -DLIBCSUPPERBOUND_INTERFACE -L./lib -lcsupperbound_original -g  -o $(BINDIR)/csupperbound_bench
-
-$(BINDIR)/cs_bench: bench/csbench.c $(DIR) $(SOS)
-	gcc  bench/csbench.c -lpapi -pthread -O3 -Iinclude/   -L./lib -g  -o $(BINDIR)/cs_bench
 
 $(BINDIR)/bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/bench
@@ -90,11 +71,9 @@ $(BINDIR)/nest_bench: bench/nest_bench.c $(DIR) $(SOS)
 	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/nest_bench
 
 
-$(BINDIR)/nest_uxcs_bench: bench/nest_bench.c $(DIR) $(SOS)
-	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib  -luta_original -g  -o $(BINDIR)/nest_uxcs_bench
+$(BINDIR)/nest_bench_uta: bench/nest_bench.c $(DIR) $(SOS)
+	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib  -luta_original -g  -o $(BINDIR)/nest_bench_uta
 
-$(BINDIR)/check: bench/check.c $(DIR) $(SOS)
-	gcc bench/check.c -pthread -O3 -o $(BINDIR)/check
 
 
 clean:
