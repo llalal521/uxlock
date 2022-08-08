@@ -46,172 +46,183 @@
 extern __thread unsigned int cur_thread_id;
 __thread int nested_level = 0;
 
-
-spinlock_mutex_t *spinlock_mutex_create(const pthread_mutexattr_t *attr) {
-    spinlock_mutex_t *impl =
-        (spinlock_mutex_t *)alloc_cache_align(sizeof(spinlock_mutex_t));
-    impl->spin_lock = UNLOCKED;
+spinlock_mutex_t *spinlock_mutex_create(const pthread_mutexattr_t * attr)
+{
+	spinlock_mutex_t *impl =
+	    (spinlock_mutex_t *) alloc_cache_align(sizeof(spinlock_mutex_t));
+	impl->spin_lock = UNLOCKED;
 #if COND_VAR
-    REAL(pthread_mutex_init)(&impl->posix_lock, attr);
+	REAL(pthread_mutex_init) (&impl->posix_lock, attr);
 #endif
 
-    return impl;
+	return impl;
 }
 
-void stub() {
-    // printf("Nested!\n");
-}
+int spinlock_mutex_lock(spinlock_mutex_t * impl,
+			spinlock_context_t * UNUSED(me))
+{
+	int expected = UNLOCKED;
 
-int spinlock_mutex_lock(spinlock_mutex_t *impl,
-                        spinlock_context_t *UNUSED(me)) {
-    int expected = UNLOCKED;
-
-    nested_level ++;
-    // if (nested_level > 1) {
-    //     stub();
-    // }
-
-    while (!__atomic_compare_exchange_n(&impl->spin_lock, &expected, LOCKED, 0,
-        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-        expected = UNLOCKED;
-        waiting_policy_sleep((volatile int *)&impl->spin_lock);
-    }
+	nested_level++;
+	while (!__atomic_compare_exchange_n
+	       (&impl->spin_lock, &expected, LOCKED, 0, __ATOMIC_ACQUIRE,
+		__ATOMIC_RELAXED)) {
+		expected = UNLOCKED;
+		waiting_policy_sleep((volatile int *)&impl->spin_lock);
+	}
 #if COND_VAR
-    int ret = REAL(pthread_mutex_lock)(&impl->posix_lock);
-    assert(ret == 0);
+	int ret = REAL(pthread_mutex_lock) (&impl->posix_lock);
+	assert(ret == 0);
 #endif
-    return 0;
+	return 0;
 }
 
-int spinlock_mutex_trylock(spinlock_mutex_t *impl,
-                           spinlock_context_t *UNUSED(me)) {
-    int expected = UNLOCKED;
-    if (__atomic_compare_exchange_n(&impl->spin_lock, &expected, LOCKED, 0,
-        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+int spinlock_mutex_trylock(spinlock_mutex_t * impl,
+			   spinlock_context_t * UNUSED(me))
+{
+	int expected = UNLOCKED;
+	if (__atomic_compare_exchange_n(&impl->spin_lock, &expected, LOCKED, 0,
+					__ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
 #if COND_VAR
-        int ret = 0;
-        while ((ret = REAL(pthread_mutex_trylock)(&impl->posix_lock)) == EBUSY)
-            CPU_PAUSE();
-        assert(ret == 0);
+		int ret = 0;
+		while ((ret =
+			REAL(pthread_mutex_trylock) (&impl->posix_lock)) ==
+		       EBUSY)
+			CPU_PAUSE();
+		assert(ret == 0);
 #endif
-        nested_level ++;
-        return 0;
-    }
+		nested_level++;
+		return 0;
+	}
 
-    return EBUSY;
+	return EBUSY;
 }
 
-void __spinlock_mutex_unlock(spinlock_mutex_t *impl) {
-    MEMORY_BARRIER();
-    nested_level --;
-    waiting_policy_wake((volatile int *)&impl->spin_lock);
+void __spinlock_mutex_unlock(spinlock_mutex_t * impl)
+{
+	MEMORY_BARRIER();
+	nested_level--;
+	waiting_policy_wake((volatile int *)&impl->spin_lock);
 }
 
-void spinlock_mutex_unlock(spinlock_mutex_t *impl,
-                           spinlock_context_t *UNUSED(me)) {
+void spinlock_mutex_unlock(spinlock_mutex_t * impl,
+			   spinlock_context_t * UNUSED(me))
+{
 #if COND_VAR
-    int ret = REAL(pthread_mutex_unlock)(&impl->posix_lock);
-    assert(ret == 0);
+	int ret = REAL(pthread_mutex_unlock) (&impl->posix_lock);
+	assert(ret == 0);
 #endif
-    __spinlock_mutex_unlock(impl);
+	__spinlock_mutex_unlock(impl);
 }
 
-int spinlock_mutex_destroy(spinlock_mutex_t *lock) {
+int spinlock_mutex_destroy(spinlock_mutex_t * lock)
+{
 #if COND_VAR
-    REAL(pthread_mutex_destroy)(&lock->posix_lock);
+	REAL(pthread_mutex_destroy) (&lock->posix_lock);
 #endif
-    free(lock);
-    lock = NULL;
+	free(lock);
+	lock = NULL;
 
-    return 0;
+	return 0;
 }
 
-int spinlock_cond_init(spinlock_cond_t *cond, const pthread_condattr_t *attr) {
+int spinlock_cond_init(spinlock_cond_t * cond, const pthread_condattr_t * attr)
+{
 #if COND_VAR
-    return REAL(pthread_cond_init)(cond, attr);
+	return REAL(pthread_cond_init) (cond, attr);
 #else
-    fprintf(stderr, "Error cond_var not supported.");
-    assert(0);
+	fprintf(stderr, "Error cond_var not supported.");
+	assert(0);
 #endif
 }
 
-int spinlock_cond_timedwait(spinlock_cond_t *cond, spinlock_mutex_t *lock,
-                            spinlock_context_t *me, const struct timespec *ts) {
+int spinlock_cond_timedwait(spinlock_cond_t * cond, spinlock_mutex_t * lock,
+			    spinlock_context_t * me, const struct timespec *ts)
+{
 #if COND_VAR
-    int res;
+	int res;
 
-    __spinlock_mutex_unlock(lock);
+	__spinlock_mutex_unlock(lock);
 
-    if (ts)
-        res = REAL(pthread_cond_timedwait)(cond, &lock->posix_lock, ts);
-    else
-        res = REAL(pthread_cond_wait)(cond, &lock->posix_lock);
+	if (ts)
+		res =
+		    REAL(pthread_cond_timedwait) (cond, &lock->posix_lock, ts);
+	else
+		res = REAL(pthread_cond_wait) (cond, &lock->posix_lock);
 
-    if (res != 0 && res != ETIMEDOUT) {
-        fprintf(stderr, "Error on cond_{timed,}wait %d\n", res);
-        assert(0);
-    }
+	if (res != 0 && res != ETIMEDOUT) {
+		fprintf(stderr, "Error on cond_{timed,}wait %d\n", res);
+		assert(0);
+	}
 
-    int ret = 0;
-    if ((ret = REAL(pthread_mutex_unlock)(&lock->posix_lock)) != 0) {
-        fprintf(stderr, "Error on mutex_unlock %d\n", ret == EPERM);
-        assert(0);
-    }
+	int ret = 0;
+	if ((ret = REAL(pthread_mutex_unlock) (&lock->posix_lock)) != 0) {
+		fprintf(stderr, "Error on mutex_unlock %d\n", ret == EPERM);
+		assert(0);
+	}
 
-    spinlock_mutex_lock(lock, me);
+	spinlock_mutex_lock(lock, me);
 
-    return res;
+	return res;
 #else
-    fprintf(stderr, "Error cond_var not supported.");
-    assert(0);
+	fprintf(stderr, "Error cond_var not supported.");
+	assert(0);
 #endif
 }
 
-int spinlock_cond_wait(spinlock_cond_t *cond, spinlock_mutex_t *lock,
-                       spinlock_context_t *me) {
-    return spinlock_cond_timedwait(cond, lock, me, 0);
+int spinlock_cond_wait(spinlock_cond_t * cond, spinlock_mutex_t * lock,
+		       spinlock_context_t * me)
+{
+	return spinlock_cond_timedwait(cond, lock, me, 0);
 }
 
-int spinlock_cond_signal(spinlock_cond_t *cond) {
+int spinlock_cond_signal(spinlock_cond_t * cond)
+{
 #if COND_VAR
-    return REAL(pthread_cond_signal)(cond);
+	return REAL(pthread_cond_signal) (cond);
 #else
-    fprintf(stderr, "Error cond_var not supported.");
-    assert(0);
+	fprintf(stderr, "Error cond_var not supported.");
+	assert(0);
 #endif
 }
 
-int spinlock_cond_broadcast(spinlock_cond_t *cond) {
+int spinlock_cond_broadcast(spinlock_cond_t * cond)
+{
 #if COND_VAR
-    return REAL(pthread_cond_broadcast)(cond);
+	return REAL(pthread_cond_broadcast) (cond);
 #else
-    fprintf(stderr, "Error cond_var not supported.");
-    assert(0);
+	fprintf(stderr, "Error cond_var not supported.");
+	assert(0);
 #endif
 }
 
-int spinlock_cond_destroy(spinlock_cond_t *cond) {
+int spinlock_cond_destroy(spinlock_cond_t * cond)
+{
 #if COND_VAR
-    return REAL(pthread_cond_destroy)(cond);
+	return REAL(pthread_cond_destroy) (cond);
 #else
-    fprintf(stderr, "Error cond_var not supported.");
-    assert(0);
+	fprintf(stderr, "Error cond_var not supported.");
+	assert(0);
 #endif
 }
 
-void spinlock_thread_start(void) {
+void spinlock_thread_start(void)
+{
 }
 
-void spinlock_thread_exit(void) {
+void spinlock_thread_exit(void)
+{
 }
 
-void spinlock_application_init(void) {
+void spinlock_application_init(void)
+{
 }
 
-void spinlock_application_exit(void) {
+void spinlock_application_exit(void)
+{
 }
 
-void spinlock_init_context(lock_mutex_t *UNUSED(impl),
-                           lock_context_t *UNUSED(context),
-                           int UNUSED(number)) {
+void spinlock_init_context(lock_mutex_t * UNUSED(impl),
+			   lock_context_t * UNUSED(context), int UNUSED(number))
+{
 }
