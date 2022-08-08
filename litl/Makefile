@@ -16,10 +16,9 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN= bench  uxactive_bench nest_bench uta_bench nest_bench_uta
+BIN= bench  uxactive_bench nest_bench uta_bench nest_bench_uta check
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
-
 
 all: $(BINDIR) $(DIR) include/topology.h $(SOS) $(SHS) $(BINPATH)
 
@@ -70,11 +69,11 @@ $(BINDIR)/uta_bench: bench/bench.c $(DIR) $(SOS)
 $(BINDIR)/nest_bench: bench/nest_bench.c $(DIR) $(SOS)
 	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/nest_bench
 
-
 $(BINDIR)/nest_bench_uta: bench/nest_bench.c $(DIR) $(SOS)
 	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib  -luta_original -g  -o $(BINDIR)/nest_bench_uta
 
-
+$(BINDIR)/check: bench/check.c $(DIR) $(SOS)
+	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -L./lib -g -o  $(BINDIR)/check
 
 clean:
 	rm -rf lib/ obj/ $(SHS) $(BINPATH) tail_*
