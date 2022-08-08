@@ -32,6 +32,12 @@ do
         exit -1
     fi
     sed -n "$cur_len, $end_len p" $FILE > tail_$i
+
+    sort tail_$i > tail_$i-sorted
+    per_core_p99_line=$[$line*99/100]
+    echo -n "Core $i cnt $line p99 "
+    sed -n "$per_core_p99_line p" tail_$i-sorted # p99
+
     cat tail_$i >> uxtail_tot
     cur_len=$[$end_len+2]
 done
