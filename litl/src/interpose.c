@@ -51,6 +51,8 @@
 #include <uxactive.h>
 #elif defined(UTA)
 #include <uta.h>
+#elif defined(UTAFTS)
+#include <utafts.h>
 #elif defined(UXACTIVEKC)
 #include <uxactivekc.h>
 #elif defined(UXACTIVEKCF)

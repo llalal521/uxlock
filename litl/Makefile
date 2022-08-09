@@ -16,7 +16,7 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN= bench  uxactive_bench nest_bench uta_bench nest_bench_uta check rwbench
+BIN= bench  uxactive_bench nest_bench uta_bench nest_bench_uta check rwbench utafts_bench
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
 
@@ -65,6 +65,9 @@ $(BINDIR)/uxactive_bench: bench/bench.c $(DIR) $(SOS)
 
 $(BINDIR)/uta_bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib  -luta_original -g  -o $(BINDIR)/uta_bench
+
+$(BINDIR)/utafts_bench: bench/bench.c $(DIR) $(SOS)
+	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib  -lutafts_original -g  -o $(BINDIR)/utafts_bench
 
 $(BINDIR)/nest_bench: bench/nest_bench.c $(DIR) $(SOS)
 	gcc  bench/nest_bench.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/nest_bench

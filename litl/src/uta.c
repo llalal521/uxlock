@@ -23,7 +23,7 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     10000000000
-#define SHORT_BATCH_THRESHOLD   65534 /* Should less than 2^16 65536 */
+#define SHORT_BATCH_THRESHOLD   20 /* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	10000
@@ -170,6 +170,7 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 			}
 #endif
 			spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
+			/* Important: spin should not be 0 */
 			/* Release barrier */
 			__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
 			goto out;
@@ -284,17 +285,18 @@ int uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
 /* unlock function orignal*/
 void uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 {
-	int duration;
+	uint64_t duration, end_ts;
 	/* Record CS len */
-	duration = PAPI_get_real_cyc() - tt_start[cur_loc];
+	end_ts = PAPI_get_real_cyc();
+	__uta_mutex_unlock(impl, me);
+	duration = end_ts - tt_start[cur_loc];
 	/* update critical_len */
 	if (critical_len[cur_loc] == 0)
 		critical_len[cur_loc] = duration;
 	else if (duration < MAX_CS_LEN)	/* Not too long to record */
 		critical_len[cur_loc] =
 		    ((critical_len[cur_loc] * 7) + duration) >> 3;
-	__uta_mutex_unlock(impl, me);
-	cur_loc = pop_loc();	/* Out of critical path */
+	cur_loc = pop_loc();
 }
 
 int uta_mutex_destroy(uta_mutex_t * lock)

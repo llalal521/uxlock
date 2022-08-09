@@ -18,11 +18,10 @@ sleep 1
 
 for i in `seq 0 10`
 do
-echo -n "UTA $i "
-$LITL_DIR/libuta_original.sh $LITL_DIR/bin/uta_bench -t 10 -T 1 -u $i -s 12 -g 12 -d $DELAYTIME > result
-$LOCAL_DIR/measure.sh ./result 10 10
-
-sleep 1
-
+        echo -n "UTA $i "
+        $LITL_DIR/libuta_original.sh $LITL_DIR/bin/uta_bench -t 10 -T 1 -u $i -s 12 -g 12 -d $DELAYTIME > result
+        $LOCAL_DIR/measure.sh ./result 10 10
+        sleep 1
 done
+
 rm result
