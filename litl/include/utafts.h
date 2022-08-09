@@ -20,12 +20,16 @@ typedef struct utafts_node {
 	char __pad3[pad_to_cache_line(sizeof(uint64_t))];
 
 	uint64_t start_ts;
-	char __pad4[pad_to_cache_line(sizeof(uint64_t))];
+	int id; /* Debug use */
+	char __pad4[pad_to_cache_line(sizeof(uint64_t) + sizeof(int))];
 } utafts_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utafts_mutex {
 	struct utafts_node *volatile tail;
-	char __pad[pad_to_cache_line(sizeof(struct utafts_node*))];
+	char __pad0[pad_to_cache_line(sizeof(struct utafts_node*))];
+
+	int64_t refill_window;
+	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
 } utafts_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef utafts_mutex_t lock_mutex_t;

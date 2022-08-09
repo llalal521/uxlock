@@ -13,3 +13,4 @@ lat_*
 tmp
 bin/
 .DS_Store
+log
