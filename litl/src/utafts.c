@@ -217,8 +217,8 @@ static int __utafts_mutex_lock(utafts_mutex_t * impl, utafts_node_t * me)
 int utafts_mutex_lock(utafts_mutex_t * impl, utafts_node_t * me)
 {
 	nested_level++;		/* Per-thread nest level cnter, add before hold the lock */
-	if (nested_level > 1)
-		me->remain_window = 1;	/* highest prio */
+	if (nested_level > 1) /* higher prio */
+		me->remain_window = me->remain_window < 0 ? 1 : me->remain_window;
 	// printf("%p lock remain %d\n", me, me->remain_window);
 	// me->id = sched_getcpu(); /* Debug use */
 	int ret = __utafts_mutex_lock(impl, me);
