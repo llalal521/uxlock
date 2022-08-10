@@ -88,6 +88,7 @@ static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 			if (__sync_val_compare_and_swap(&impl->tail, me, NULL)
 			    == me) {
 				// printf("No comp.!\n");
+				me->remain_window = refill_window;
 				goto out;
 			}
 		} else {
@@ -119,6 +120,7 @@ static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 	}
 	secHead = next;
 	secTail = next;
+	next->remain_window = refill_window;
 	cur = next->next;
 	while (cur) {
 		if (cur->remain_window > 0) {
