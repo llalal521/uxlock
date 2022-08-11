@@ -134,6 +134,7 @@ void request_normal(int tid)
 {
 	tt_startp = PAPI_get_real_cyc();
 	pthread_mutex_lock(&global_lock);
+	// tt_startp = PAPI_get_real_cyc();
 	tt_endp = PAPI_get_real_cyc();
 	global_cnt[tid]++;
 	if (tid < short_thread_number)
@@ -142,6 +143,7 @@ void request_normal(int tid)
 	else
 		access_variables(long_shared_variables_memory_area,
 				 long_number_of_shared_variables);
+	// tt_endp = PAPI_get_real_cyc();
 	pthread_mutex_unlock(&global_lock);
 }
 

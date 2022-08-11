@@ -27,7 +27,7 @@
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	10000
 #define MAX_CS_LEN		10000000
-#define DEAFULT_REFILL_WINDOW	1000	/* Execute window of each core */
+#define DEFAULT_REFILL_WINDOW	100000	/* Execute window of each core. AVG 2^12, * 20 */
 
 #define NOT_UX_THREAD 0
 #define IS_UX_THREAD 1
@@ -59,7 +59,9 @@ utafts_mutex_t *utafts_mutex_create(const pthread_mutexattr_t * attr)
 	utafts_mutex_t *impl =
 	    (utafts_mutex_t *) utafts_alloc_cache_align(sizeof(utafts_mutex_t));
 	impl->tail = 0;
-	impl->refill_window = DEAFULT_REFILL_WINDOW;
+#ifdef ADJUSTABLE_WINDOW
+	impl->refill_window = DEFAULT_REFILL_WINDOW;
+#endif
 	return impl;
 }
 
@@ -81,7 +83,12 @@ static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 	utafts_node_t *secHead, *secTail, *cur;
 	uint64_t spin;
 	int find = 0;
+
+#ifdef ADJUSTABLE_WINDOW
 	uint64_t refill_window = impl->refill_window;
+#else
+	uint64_t refill_window = DEFAULT_REFILL_WINDOW;
+#endif
 
 	if (!next) {
 		if (!prevHead) {
@@ -95,7 +102,7 @@ static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 			if (__sync_val_compare_and_swap
 			    (&impl->tail, me, prevHead->secTail) == me) {
 				/* Refill the window */
-				prevHead->remain_window = impl->refill_window;
+				prevHead->remain_window = refill_window;
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
@@ -256,10 +263,12 @@ void utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 	duration = end_ts - me->start_ts;
 	me->remain_window -= duration;	/* Consume remain window */
 	// printf("%d unlock duration %d remain %d\n", me->id, duration, me->remain_window);
+#ifdef ADJUSTABLE_WINDOW
 	if (impl->refill_window < duration) {
 		impl->refill_window = duration << 3;
-		// printf("update refill_window to %d\n", impl->refill_window);
+		printf("update refill_window to %d\n", impl->refill_window);
 	}
+#endif
 }
 
 int utafts_mutex_destroy(utafts_mutex_t * lock)

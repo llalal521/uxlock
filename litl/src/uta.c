@@ -23,7 +23,7 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     10000000000
-#define SHORT_BATCH_THRESHOLD   20 /* Should less than 2^16 65536 */
+#define SHORT_BATCH_THRESHOLD   1000 /* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	10000

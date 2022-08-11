@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ARG: 1 file 2 core 3 ux number
+# ARG: 1 file 2 core 3 ux number 4 per_core
 
 LOCAL_DIR=$(dirname $(readlink -f "$0"))
 KC_ROOT_DIR=$LOCAL_DIR/..
@@ -33,10 +33,13 @@ do
     fi
     sed -n "$cur_len, $end_len p" $FILE > tail_$i
 
-    sort -g tail_$i > tail_$i-sorted
-    per_core_p99_line=$[$line*99/100]
-    echo -n "Core $i Cnt $line P99 "
-    sed -n "$per_core_p99_line p" tail_$i-sorted # p99
+    # sort -g tail_$i > tail_$i-sorted
+    # per_core_p99_line=$[$line*99/100]
+    # per_core_p95_line=$[$line*95/100]
+    # echo -n "Core $i Cnt $line P99 "
+    # sed -n "$per_core_p99_line p" tail_$i-sorted | tr '\n' ' '
+    # echo -n "P95 "
+    # sed -n "$per_core_p95_line p" tail_$i-sorted
 
     cat tail_$i >> uxtail_tot
     cur_len=$[$end_len+2]

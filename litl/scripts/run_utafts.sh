@@ -5,23 +5,23 @@ LITL_DIR=$LOCAL_DIR/..
 LITLLIB_DIR=$LITL_DIR/lib
 
 DELAYTIME=0
-LONG_CRI=1024
+LONG_CRI=128
 SHORT_CRI=8
-short=2
+short=4
 time=1
-thread=6
+thread=10
 
-echo "UTA"
+echo -n "UTA "
 LD_LIBRARY_PATH=$LITLLIB_DIR:$LD_LIBRARY_PATH $LITL_DIR/bin/uta_bench -t $thread -u $thread -T $time -S $short -s $SHORT_CRI -g $LONG_CRI -d $DELAYTIME > result
 $LOCAL_DIR/measure.sh ./result $thread $thread
 sleep 1
 
-echo "UTAFTS "
+echo -n "UTAFTS "
 LD_LIBRARY_PATH=$LITLLIB_DIR:$LD_LIBRARY_PATH $LITL_DIR/bin/utafts_bench -t $thread -u $thread -T $time -S $short -s $SHORT_CRI -g $LONG_CRI -d $DELAYTIME > result
 $LOCAL_DIR/measure.sh ./result $thread $thread
 sleep 1
 
-echo "MCS "
+echo -n "MCS "
 $LITL_DIR/libmcs_spinlock.sh $LITL_DIR//bin/bench -t $thread -u $thread -T $time -S $short -s $SHORT_CRI -g $LONG_CRI -d $DELAYTIME > result
 $LOCAL_DIR/measure.sh ./result $thread $thread
 sleep 1

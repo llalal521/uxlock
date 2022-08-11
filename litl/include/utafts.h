@@ -28,8 +28,10 @@ typedef struct utafts_mutex {
 	struct utafts_node *volatile tail;
 	char __pad0[pad_to_cache_line(sizeof(struct utafts_node*))];
 
+#ifdef ADJUSTABLE_WINDOW
 	int64_t refill_window;
 	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
+#endif
 } utafts_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef utafts_mutex_t lock_mutex_t;

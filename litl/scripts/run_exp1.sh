@@ -8,21 +8,38 @@ export LD_LIBRARY_PATH=$LITLLIB_DIR:$LD_LIBRARY_PATH
 delay=0
 core=10
 time=1
+LONG_CRI=8
+SHORT_CRI=8
+uxthread=4
 
-for i in `seq 4 10`
+echo -n "tas "
+for i in 10
 do
-        echo -n "$[$i-4] "
-
-        $LITL_DIR/libspinlock_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -> result
-        $LOCAL_DIR/measure.sh ./result $i 4 | tr '\n' '\t'
+        $LITL_DIR/libspinlock_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LOCAL_DIR/measure.sh ./result $i $uxthread 0
         sleep 1
+done
 
-        $LITL_DIR/libmcs_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -> result
-        $LOCAL_DIR/measure.sh ./result $i 4 | tr '\n' '\t'
+echo -n "mcs "
+for i in 10
+do
+        $LITL_DIR/libmcs_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LOCAL_DIR/measure.sh ./result $i $uxthread 0
         sleep 1
+done
 
-        $LITL_DIR/libuta_original.sh  $LITL_DIR/bin/uta_bench -u 4 -t $i -T $time -S $core -d $delay -> result
-        $LOCAL_DIR/measure.sh ./result $i 4
+echo -n "uta "
+for i in 10
+do
+        $LITL_DIR/libuta_original.sh  $LITL_DIR/bin/uta_bench -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LOCAL_DIR/measure.sh ./result $i $uxthread 0
+done
+
+echo -n "utafts "
+for i in  10
+do
+        $LITL_DIR/libutafts_original.sh  $LITL_DIR/bin/utafts_bench -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LOCAL_DIR/measure.sh ./result $i $uxthread 0
         sleep 1
 done
 
