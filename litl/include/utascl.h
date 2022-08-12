@@ -20,11 +20,8 @@ typedef struct utascl_mutex {
 	char __pad0[pad_to_cache_line(sizeof(pthread_mutex_t))];
 #endif
 	struct utascl_node *volatile tail;
-	volatile long long tot_hold_time;
+	volatile long long max_hold_time;
 	char __pad[pad_to_cache_line(sizeof(struct utascl_node *) + sizeof(long long))];
-
-	int num_thread;
-	char __pad1[pad_to_cache_line(sizeof(int))];
 } utascl_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef pthread_cond_t utascl_cond_t;

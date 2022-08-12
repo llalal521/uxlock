@@ -54,8 +54,7 @@ utascl_mutex_t *utascl_mutex_create(const pthread_mutexattr_t * attr)
 	utascl_mutex_t *impl = (utascl_mutex_t *)
 	    utascl_alloc_cache_align(sizeof(utascl_mutex_t));
 	impl->tail = 0;
-	impl->tot_hold_time = 0;
-	impl->num_thread = 0;
+	impl->max_hold_time = 0;
 #if COND_VAR
 	REAL(pthread_mutex_init) (&impl->posix_lock, /*&errattr */ attr);
 #endif
@@ -95,14 +94,12 @@ static inline int __utascl_lock_reorder(utascl_mutex_t * impl,
 	uint64_t reorder_window_ddl;
 	uint64_t current_tick;
 	uint32_t cnt = 0, next_check = 100;
-	long long wait_time, quota;
-	long long local_hold_time = me->hold_time;
+	long long wait_time, local_hold_time = me->hold_time;
 
 	while (impl->tail) {
-		quota = impl->tot_hold_time / impl->num_thread;
-		if (local_hold_time < quota)
+		wait_time = impl->max_hold_time - local_hold_time;
+		if (wait_time)
 			goto out;
-		wait_time = quota - local_hold_time;
 		reorder_window_ddl = PAPI_get_real_cyc() + wait_time;
 		while ((current_tick =
 			PAPI_get_real_cyc()) < reorder_window_ddl) {
@@ -138,13 +135,8 @@ static int __utascl_mutex_lock(utascl_mutex_t * impl, utascl_node_t * me)
 {
 	long long local_hold_time = me->hold_time;
 
-	if (local_hold_time == 0) {	/* Increase the thread cnt */
-		__atomic_fetch_add(&impl->num_thread, 1, __ATOMIC_RELAXED);
-	}
-
 	if (uxthread) {
-		long long quota = impl->tot_hold_time / impl->num_thread;
-		if (local_hold_time < quota) {
+		if (local_hold_time < impl->max_hold_time) {
 			return __utascl_lock_fifo(impl, me);
 		} else {
 			return __utascl_lock_reorder(impl, me);
@@ -179,8 +171,10 @@ static void __utascl_mutex_unlock(utascl_mutex_t * impl, utascl_node_t * me)
 {
 	utascl_node_t *expected;
 	long long duration = PAPI_get_real_cyc() - me->start_ts;
+	me->hold_time += duration;
+	if (me->hold_time > impl->max_hold_time)
+		impl->max_hold_time = me->hold_time;
 
-	impl->tot_hold_time += duration;
 	if (!me->next) {
 		expected = me;
 		if (__atomic_compare_exchange_n(&impl->tail, &expected, 0, 0,
@@ -194,7 +188,6 @@ static void __utascl_mutex_unlock(utascl_mutex_t * impl, utascl_node_t * me)
 	MEMORY_BARRIER();
 	me->next->spin = 1;
  out:
-	me->hold_time += duration;
 	return;
 }
 
