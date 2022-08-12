@@ -151,7 +151,7 @@ void request_normal(int tid)
 	pthread_mutex_unlock(&global_lock);
 #ifdef	LIBUTASCL_INTERFACE
 	tt_endp = PAPI_get_real_cyc();
-	epoch_end(0, 10000);
+	epoch_end(0, 100000);
 #endif
 }
 
