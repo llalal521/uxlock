@@ -23,7 +23,7 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     10000000000
-#define SHORT_BATCH_THRESHOLD   1000 /* Should less than 2^16 65536 */
+#define SHORT_BATCH_THRESHOLD   1000	/* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	10000
@@ -100,12 +100,13 @@ static int __uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
 	me->next = NULL;
 	expected = NULL;
 	return __atomic_compare_exchange_n(&impl->tail, &expected, me, 0,
-					   __ATOMIC_ACQ_REL, __ATOMIC_RELAXED) ? 0 : -EBUSY;
+					   __ATOMIC_ACQ_REL,
+					   __ATOMIC_RELAXED) ? 0 : -EBUSY;
 }
 
 static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 {
-	uta_node_t *succ, *next = me->next;
+	uta_node_t *succ, *next = me->next, *expected;
 	uint64_t spin;
 	uint64_t batch = (me->spin >> 48) & 0xFFFF;
 	uta_node_t *prevHead = (uta_node_t *) (me->spin & 0xFFFFFFFFFFFF);
@@ -115,13 +116,17 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 
 	if (!next) {
 		if (!prevHead) {
-			if (__sync_val_compare_and_swap(&impl->tail, me, NULL)
-			    == me) {
+			expected = me;
+			if (__atomic_compare_exchange_n
+			    (&impl->tail, &expected, 0, 0, __ATOMIC_RELEASE,
+			     __ATOMIC_RELAXED)) {
 				goto out;
 			}
 		} else {
-			if (__sync_val_compare_and_swap
-			    (&impl->tail, me, prevHead->secTail) == me) {
+			expected = me;
+			if (__atomic_compare_exchange_n
+			    (&impl->tail, &expected, prevHead->secTail, 0,
+			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
@@ -317,13 +322,12 @@ int uta_cond_init(uta_cond_t * cond, const pthread_condattr_t * attr)
 }
 
 int uta_cond_timedwait(uta_cond_t * cond, uta_mutex_t * lock,
-			  uta_node_t * me, const struct timespec *ts)
+		       uta_node_t * me, const struct timespec *ts)
 {
 	return 0;
 }
 
-int uta_cond_wait(uta_cond_t * cond, uta_mutex_t * lock,
-		     uta_node_t * me)
+int uta_cond_wait(uta_cond_t * cond, uta_mutex_t * lock, uta_node_t * me)
 {
 	return uta_cond_timedwait(cond, lock, me, 0);
 }
@@ -360,7 +364,7 @@ int uta_cond_destroy(uta_cond_t * cond)
 }
 
 void uta_init_context(lock_mutex_t * UNUSED(impl),
-			 lock_context_t * UNUSED(context), int UNUSED(number))
+		      lock_context_t * UNUSED(context), int UNUSED(number))
 {
 }
 

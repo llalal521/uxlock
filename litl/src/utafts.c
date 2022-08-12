@@ -78,7 +78,7 @@ static int __utafts_mutex_trylock(utafts_mutex_t * impl, utafts_node_t * me)
 
 static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 {
-	utafts_node_t *succ, *next = me->next;
+	utafts_node_t *succ, *next = me->next, *expected;
 	utafts_node_t *prevHead = (utafts_node_t *) (me->spin & 0xFFFFFFFFFFFF);
 	utafts_node_t *secHead, *secTail, *cur;
 	uint64_t spin;
@@ -92,21 +92,20 @@ static void __utafts_mutex_unlock(utafts_mutex_t * impl, utafts_node_t * me)
 
 	if (!next) {
 		if (!prevHead) {
-			if (__sync_val_compare_and_swap(&impl->tail, me, NULL)
-			    == me) {
-				// printf("No comp.!\n");
-				me->remain_window = refill_window;
+			expected = me;
+			if (__atomic_compare_exchange_n
+			    (&impl->tail, &expected, 0, 0, __ATOMIC_RELEASE,
+			     __ATOMIC_RELAXED)) {
 				goto out;
 			}
 		} else {
-			if (__sync_val_compare_and_swap
-			    (&impl->tail, me, prevHead->secTail) == me) {
-				/* Refill the window */
-				prevHead->remain_window = refill_window;
+			expected = me;
+			if (__atomic_compare_exchange_n
+			    (&impl->tail, &expected, prevHead->secTail, 0,
+			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
-				// printf("Second queue %p\n", prevHead);
 				goto out;
 			}
 		}

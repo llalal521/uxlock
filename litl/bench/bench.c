@@ -13,7 +13,7 @@
 #include <papi.h>
 
 /* Define Platform Here */
-#define r74x
+// #define r74x
 
 #ifdef r74x
 #define PLAT_CPU_NUM 40
@@ -133,9 +133,13 @@ int short_thread_number = 4;
 void request_normal(int tid)
 {
 	tt_startp = PAPI_get_real_cyc();
+#ifdef	LIBUTASCL_INTERFACE
+	epoch_start(0);
+#endif
 	pthread_mutex_lock(&global_lock);
-	// tt_startp = PAPI_get_real_cyc();
+#ifndef	LIBUTASCL_INTERFACE
 	tt_endp = PAPI_get_real_cyc();
+#endif
 	global_cnt[tid]++;
 	if (tid < short_thread_number)
 		access_variables(short_shared_variables_memory_area,
@@ -145,6 +149,10 @@ void request_normal(int tid)
 				 long_number_of_shared_variables);
 	// tt_endp = PAPI_get_real_cyc();
 	pthread_mutex_unlock(&global_lock);
+#ifdef	LIBUTASCL_INTERFACE
+	tt_endp = PAPI_get_real_cyc();
+	epoch_end(0, 10000);
+#endif
 }
 
 void *thread_routine_transparent(void *arg)

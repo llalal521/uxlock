@@ -55,6 +55,8 @@
 #include <utafts.h>
 #elif defined(UTASCL)
 #include <utascl.h>
+#elif defined(UTASPC)
+#include <utaspc.h>
 #elif defined(UXACTIVEKC)
 #include <uxactivekc.h>
 #elif defined(UXACTIVEKCF)
