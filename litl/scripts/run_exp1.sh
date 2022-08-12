@@ -10,9 +10,9 @@ core=6
 time=1
 LONG_CRI=8
 SHORT_CRI=8
-uxthread=4
+uxthread=6
 
-echo -n "tas "
+echo "tas "
 for i in 6
 do
         $LITL_DIR/libspinlock_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
@@ -20,7 +20,7 @@ do
         sleep 1
 done
 
-echo -n "mcs "
+echo "mcs "
 for i in 6
 do
         $LITL_DIR/libmcs_spinlock.sh  $LITL_DIR/bin/bench -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
@@ -28,14 +28,14 @@ do
         sleep 1
 done
 
-echo -n "uta "
+echo "uta "
 for i in 6
 do
         $LITL_DIR/libuta_original.sh  $LITL_DIR/bin/uta_bench -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
         $LOCAL_DIR/measure.sh ./result $i $uxthread 0
 done
 
-echo -n "utafts "
+echo "utafts "
 for i in  6
 do
         $LITL_DIR/libutafts_original.sh  $LITL_DIR/bin/utafts_bench -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
@@ -43,7 +43,7 @@ do
         sleep 1
 done
 
-echo -n "utascl "
+echo "utascl "
 for i in  6
 do
         $LITL_DIR/libutascl_original.sh  $LITL_DIR/bin/utascl_bench -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
