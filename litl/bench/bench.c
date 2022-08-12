@@ -13,7 +13,7 @@
 #include <papi.h>
 
 /* Define Platform Here */
-#define r74x
+// #define r74x
 
 #ifdef r74x
 #define PLAT_CPU_NUM 40
