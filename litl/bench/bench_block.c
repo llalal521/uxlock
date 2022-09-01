@@ -161,17 +161,20 @@ void *thread_routine_transparent(void *arg)
 	double wait;
 	int64_t tid = (int64_t) arg;
 	int record_cnt = 0;
-	int i = 0;
-
-	int core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+	int i = 0, core_id;
 
 #ifdef UX_PRIORITY
-	if (tid < ux_num)
-		set_ux(1);
-	else
-		set_ux(0);
+	if (tid < ux_num) {
+        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+        set_ux(1);
+    }
+	else {
+        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+        set_ux(0);
+    }
+#else
+    core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
 #endif
-
 	/* Bind core */
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
@@ -216,7 +219,7 @@ int main(int argc, char *argv[])
 	unsigned long total_cnt = 0;
 	int command;
 	int sleep_time = 3;
-	int nb_thread = 16;
+	int nb_thread = 20;
 	void *(*thread_entry)(void *);
 
 	srand(10);
@@ -225,7 +228,6 @@ int main(int argc, char *argv[])
 	target_latency = 100000;
 	long_number_of_shared_variables = 5120;
 	short_number_of_shared_variables = 32;
-
 	while ((command = getopt(argc, argv, "m:g:u:s:p:d:t:hT:r:l:S:")) != -1) {
 		switch (command) {
 		case 'h':
@@ -276,6 +278,7 @@ int main(int argc, char *argv[])
 		exit(-1);
 		break;
 	}
+	
 	//long critical to uon-ux thread
 	long_shared_variables_memory_area =
 	    (uint64_t *) malloc(long_number_of_shared_variables * 64);
@@ -285,7 +288,6 @@ int main(int argc, char *argv[])
 	pthread_barrier_init(&sig_start, 0, nb_thread + 1);
 	for (i = 0; i < nb_thread; i++)
 		pthread_create(&tid[i], NULL, thread_entry, (void *)i);
-
 	sched_yield();
 	pthread_barrier_wait(&sig_start);
 	/* Start Barrier */
