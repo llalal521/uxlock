@@ -24,10 +24,10 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     100000000
-#define SHORT_BATCH_THRESHOLD   1000	/* Should less than 2^16 65536 */
+#define SHORT_BATCH_THRESHOLD   100000	/* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
-#define DEFAULT_SHORT_THRESHOLD	10000
+#define DEFAULT_SHORT_THRESHOLD	1000
 #define MAX_CS_LEN		10000000
 
 #define NODE_ACTIVE 1
@@ -162,6 +162,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 	if (batch < SHORT_BATCH_THRESHOLD) {
 		/* Find next short CS */
 		if (next->cri_len < threshold) {
+			// printf("cur_thread_id %d is short %d\n", cur_thread_id, next->cri_len);
 			find = 1;
 			cur = next;
 			goto find_out;

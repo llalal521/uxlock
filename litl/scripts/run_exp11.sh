@@ -9,31 +9,31 @@ delay=0
 core=5
 time=1
 LONG_CRI=8
-SHORT_CRI=8
+SHORT_CRI=128
 uxthread=10
 
 echo "pthread_lock "
 for i in 20
 do
         $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
-        $LOCAL_DIR/measure.sh ./result  $i $i 0
+        $LOCAL_DIR/measure.sh ./result  $i 10 0
         sleep 1
 done
 
 # echo "tas "
-# for i in 20
+# for i in `seq 10 20`
 # do
 #         $LITL_DIR/libspinlock_spin_then_park.sh $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
 #         $LOCAL_DIR/measure.sh ./result $i $i 0
 #         sleep 1
 # done
 
-echo "utablocking "
-for i in 20
-do
-        $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
-        $LOCAL_DIR/measure.sh ./result $i $i 0
-done
+# echo "utablocking "
+# for i in 20
+# do
+#         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
+#         $LOCAL_DIR/measure.sh ./result 20 20 0
+# done
 
 # rm result
 

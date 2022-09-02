@@ -36,10 +36,15 @@ do
     sort -g tail_$i > tail_$i-sorted
     per_core_p99_line=$[$line*99/100]
     per_core_p95_line=$[$line*95/100]
+    per_core_p50_line=$[$line*50/100]
     echo -n "Core $i Cnt $line P99 "
     sed -n "$per_core_p99_line p" tail_$i-sorted | tr '\n' ' '
     echo -n "P95 "
     sed -n "$per_core_p95_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "P50 "
+    sed -n "$per_core_p50_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "avg "
+    awk '{sum += $1} END {printf "%3.3f\t",sum/NR}' tail_$i-sorted | tr '\n' '\t'  # avg
     echo -n "Tail "
     tail -n 1 tail_$i-sorted
 

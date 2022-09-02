@@ -64,7 +64,7 @@ $(BINDIR)/bench_block: bench/bench_block.c $(DIR) $(SOS)
 	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/bench_block
 
 $(BINDIR)/uta_bench_block: bench/bench_block.c $(DIR) $(SOS)
-	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/  -DLIBUTA_INTERFACE -L./lib  -lutablocking_spin_then_park -g  -o $(BINDIR)/uta_bench_block
+	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/  -DLIBUTA_INTERFACE -L./lib  -lutablocking_spin_then_park -g  -o $(BINDIR)/uta_bench_block
 
 $(BINDIR)/uxactive_bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUXACTIVE_INTERFACE -L./lib -luxactive_original  -g  -o $(BINDIR)/uxactive_bench

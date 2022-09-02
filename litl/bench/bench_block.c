@@ -147,6 +147,7 @@ void request_normal(int tid)
 	else
 		access_variables(long_shared_variables_memory_area,
 				 long_number_of_shared_variables);
+	
 	// tt_endp = PAPI_get_real_cyc();
 	pthread_mutex_unlock(&global_lock);
 #ifdef	LIBUTASCL_INTERFACE
@@ -184,6 +185,7 @@ void *thread_routine_transparent(void *arg)
 	record_all[tid] = record_latency;
 	/* Start Barrier */
 	pthread_barrier_wait(&sig_start);
+
 	while (!global_stop) {
 		i++;
 		if (1) {
@@ -298,6 +300,7 @@ int main(int argc, char *argv[])
 	uint64_t res = 0;
 	for (i = 0; i < nb_thread; i++)
 		total_cnt += global_cnt[i];
+	// printf("pthread\n");
 	printf("%lf\n", (double)(total_cnt) / sleep_time);
 	for (i = 0; i < nb_thread; i++) {
 		cur = global_cnt[i];
