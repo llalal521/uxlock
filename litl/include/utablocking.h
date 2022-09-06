@@ -24,7 +24,7 @@ typedef struct utablocking_node {
 	int tid;
 	char __pad4[pad_to_cache_line(sizeof(int))];
 
-	int status;
+	volatile int status;
 	char __pad5[pad_to_cache_line(sizeof(int))];
 } utablocking_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 

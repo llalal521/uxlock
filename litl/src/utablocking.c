@@ -146,7 +146,7 @@ static void waking_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 			continue;
 		}	
 		__atomic_store_n(&me->status, NODE_ACTIVE, __ATOMIC_RELEASE);
-		// printf("tid %d NODE_ACTIVE\n", me->tid);
+		// printf("tid %d wake\n", me->tid);
 		waiting_policy_wake(&me->spin);
 		me = me->next;
 	}
@@ -181,7 +181,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 						 __ATOMIC_RELEASE);
 				// printList(impl, prevHead, 0);
 				waking_queue(impl, prevHead);
-				
+				printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->status);
 				goto out;
 			}
 		}
@@ -234,6 +234,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 			/* Release barrier */
 			// //printf("cur_thread_id %d unlock 6\n", cur_thread_id);
 			__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
+			printf("cur->tid %d should lock status %d\n", cur->tid, cur->status);
 			// printList(impl, cur, 2);
 			goto out;
 		} else {
@@ -251,6 +252,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 		// // printList(impl, prevHead);
 		/* Release barrier */
 		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
+		printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->status);
 		// printf("here wake\n");	
 		// printList(impl, prevHead, 4);
 		waking_queue(impl, prevHead);
@@ -263,6 +265,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier after */
 		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
+		printf("succ->tid %d should lock %d\n", succ->tid, succ->status);
 		// // printList(impl, succ, 5);
 	}
  out:
@@ -296,7 +299,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 		/* set batch to 0 */
 		me->spin = 0;
 	}
-	// printf("tid %d lock succ\n", me->tid);
+	printf("tid %d lock succ %d\n", me->tid, me->status);
 	// printf("cur_thread_id %d lock succ\n", cur_thread_id);
 	return 0;
 }
