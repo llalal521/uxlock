@@ -21,8 +21,11 @@ typedef struct utablocking_node {
 	int cri_len;
 	char __pad3[pad_to_cache_line(sizeof(int))];
 
-	int status;
+	int tid;
 	char __pad4[pad_to_cache_line(sizeof(int))];
+
+	int status;
+	char __pad5[pad_to_cache_line(sizeof(int))];
 } utablocking_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utablocking_mutex {
@@ -32,8 +35,8 @@ typedef struct utablocking_mutex {
 	int64_t threshold;
 	char __pad1[pad_to_cache_line(sizeof(int64_t))];
 
-	pthread_mutex_t glb_lock;
-	char __pad2[pad_to_cache_line(sizeof(int64_t))];
+	volatile uint8_t glb_lock;
+	char __pad2[pad_to_cache_line(sizeof(uint8_t))];
 } utablocking_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef utablocking_mutex_t lock_mutex_t;

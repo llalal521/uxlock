@@ -102,8 +102,11 @@ static inline void waiting_policy_sleep(volatile int *var) {
         CPU_PAUSE();
     }
 
-    if (*var == UNLOCKED)
+    if (*var == UNLOCKED) {
+        // printf("here return\n");
         return;
+    }
+        
 
     int ret = 0;
     while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, LOCKED, NULL, 0,
@@ -123,18 +126,18 @@ static inline void waiting_policy_sleep(volatile int *var) {
             exit(-1);
         }
     }
-
+    // printf("ddd1\n");
     /**
      * *var is not always 1 immediately when the thread wakes up
      * (but eventually it is).
      * Maybe related to memory reordering?
      **/
-    while (*var != UNLOCKED)
-        CPU_PAUSE();
+    // while (*var != UNLOCKED)
+    //     CPU_PAUSE();
 }
 
 static inline void waiting_policy_wake(volatile int *var) {
-    *var    = 1;
+    // *var    = 1;
     int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, UNLOCKED, NULL, 0, 0);
     if (ret == -1) {
         perror("Unable to futex wake");

@@ -15,7 +15,7 @@ uxthread=10
 echo "pthread_lock "
 for i in 20
 do
-        $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $SHORT_CRI > result
         $LOCAL_DIR/measure.sh ./result  $i 10 0
         sleep 1
 done
