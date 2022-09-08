@@ -10,7 +10,7 @@ core=10
 time=1
 LONG_CRI=8
 SHORT_CRI=8
-uxthread=20
+uxthread=5
 
 # echo "pthread_lock "
 # for i in 20
@@ -31,7 +31,7 @@ uxthread=20
 # done
 
 echo "utablocking "
-for i in 20
+for i in 10
 do
         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $uxthread -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI 
 done

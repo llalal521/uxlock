@@ -54,7 +54,7 @@ int push_loc(int loc)
 {
 	stack_pos++;
 	if (stack_pos == STACK_SIZE) {
-		//printf("Loc Stack FULL!\n");
+		//// // // printf("Loc Stack FULL!\n");
 		return -1;
 	}
 	loc_stack[stack_pos] = loc;
@@ -65,17 +65,17 @@ void printList(utablocking_mutex_t * impl, utablocking_node_t * me, int i)
 {
 	utablocking_node_t *cur = me;
 	utablocking_node_t *prevHead = (utablocking_node_t *) (me->spin & 0xFFFFFFFFFFFF);
-	printf("loc %d", i);
+	// // // printf("loc %d", i);
 	while(cur) {
-		printf("->[%d %d %d %d %lu]", cur->tid, cur->status, i++, cur->cri_len, cur->spin);
+		// // // printf("->[%d %d %d %d %lu]", cur->tid, cur->status, i++, cur->cri_len, cur->spin);
 		cur = cur->next;
 	}
 
 	// if(!prevHead)
 	// 	goto printOut;
-	// printf("->second ");
+	// // // // printf("->second ");
 	// while(prevHead) {
-	// 	printf("->[%d %d %d]",prevHead->tid, prevHead->status, prevHead->cri_len);
+	// 	// // // printf("->[%d %d %d]",prevHead->tid, prevHead->status, prevHead->cri_len);
 	// 	prevHead = prevHead->next;
 	// }
 printOut:
@@ -114,7 +114,6 @@ utablocking_mutex_t *utablocking_mutex_create(const pthread_mutexattr_t * attr)
 	    (utablocking_mutex_t *) utablocking_alloc_cache_align(sizeof(utablocking_mutex_t));
 	impl->tail = 0;
 	impl->threshold = DEFAULT_SHORT_THRESHOLD;
-	impl->glb_lock = UNLOCKED;
 	return impl;
 }
 
@@ -132,8 +131,13 @@ static int __utablocking_mutex_trylock(utablocking_mutex_t * impl, utablocking_n
 static void waiting_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 {
 	while(me) {
-		__atomic_store_n(&me->status, NODE_SLEEP, __ATOMIC_RELEASE);
-		// printf("tid %d SLEEP\n", me->tid);
+		if(me->wait == NODE_SLEEP) {
+			me = me->next;
+			continue;
+		}	
+		// __atomic_store_n(&me->status, NODE_SLEEP, __ATOMIC_RELEASE);
+		__atomic_store_n(&me->wait, NODE_SLEEP, __ATOMIC_RELEASE);
+		// printf("set tid %d sleep status %d cur %d\n", me->tid, me->wait, cur_thread_id);
 		me = me->next;
 	}
 }
@@ -141,13 +145,14 @@ static void waiting_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 static void waking_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 {
 	while(me) {
-		if(me->status == NODE_ACTIVE) {
+		if(me->wait == NODE_ACTIVE) {
 			me = me->next;
 			continue;
 		}	
-		__atomic_store_n(&me->status, NODE_ACTIVE, __ATOMIC_RELEASE);
-		// printf("tid %d wake\n", me->tid);
-		waiting_policy_wake(&me->spin);
+		// __atomic_store_n(&me->status, NODE_ACTIVE, __ATOMIC_RELEASE);
+		// printf("set tid %d wake status %d cur %d\n", me->tid, me->wait, cur_thread_id);
+		waiting_policy_wake(&me->wait);
+		// printf("set tid %d wake status %d cur %d\n", me->tid, me->wait, cur_thread_id);
 		me = me->next;
 	}
 }
@@ -162,7 +167,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 	int32_t threshold = impl->threshold;
 
 	int find = 0;
-	// printf("tid %d unlock 1\n", me->tid);
+	// // printf("tid %d unlock 1\n", me->tid);
 	if (!next) {
 		if (!prevHead) {
 			expected = me;
@@ -176,12 +181,14 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 			if (__atomic_compare_exchange_n
 			    (&impl->tail, &expected, prevHead->secTail, 0,
 			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+					waking_queue(impl, prevHead);
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
 				// printList(impl, prevHead, 0);
-				waking_queue(impl, prevHead);
-				printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->status);
+				// // printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->wait);
+				
+				
 				goto out;
 			}
 		}
@@ -196,7 +203,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 	if (batch < SHORT_BATCH_THRESHOLD) {
 		/* Find next short CS */
 		if (next->cri_len < threshold) {
-			// printf("cur_thread_id %d is short %d\n", cur_thread_id, next->cri_len);
+			// // // // printf("cur_thread_id %d is short %d\n", cur_thread_id, next->cri_len);
 			find = 1;
 			cur = next;
 			goto find_out;
@@ -226,21 +233,21 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 #ifdef ADJUST_THRESHOLD
 			if (batch % ADJUST_FREQ == ADJUST_FREQ - 1) {
 				impl->threshold = threshold - 1;
-				// //printf("decrease threshold %d\n", threshold);
+				// //// // // printf("decrease threshold %d\n", threshold);
 			}
 #endif
 			spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
 			/* Important: spin should not be 0 */
 			/* Release barrier */
-			// //printf("cur_thread_id %d unlock 6\n", cur_thread_id);
+			// //// // // printf("cur_thread_id %d unlock 6\n", cur_thread_id);
 			__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
-			printf("cur->tid %d should lock status %d\n", cur->tid, cur->status);
+			// // printf("cur->tid %d should lock status %d\n", cur->tid, cur->wait);
 			// printList(impl, cur, 2);
 			goto out;
 		} else {
 #ifdef ADJUST_THRESHOLD
 			impl->threshold = threshold + 1;
-			// //printf("increase threshold %d\n", threshold);
+			// //// // // printf("increase threshold %d\n", threshold);
 #endif
 		}
 	}
@@ -251,21 +258,22 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 		spin = 0x1000000000000;	/* batch = 1 */
 		// // printList(impl, prevHead);
 		/* Release barrier */
-		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
-		printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->status);
-		// printf("here wake\n");	
-		// printList(impl, prevHead, 4);
 		waking_queue(impl, prevHead);
+		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
+		// // printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->wait);
+		// // // // printf("here wake\n");	
+		// printList(impl, prevHead, 4);
 		
-		// //printf("waiting wake\n");
+		
+		// //// // // printf("waiting wake\n");
 		
 	} else {
-		// //printf("succ %p %d %d\n", succ, impl->batch, impl->threshold);
+		// //// // // printf("succ %p %d %d\n", succ, impl->batch, impl->threshold);
 		succ = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier after */
 		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
-		printf("succ->tid %d should lock %d\n", succ->tid, succ->status);
+		// // printf("succ->tid %d should lock %d\n", succ->tid, succ->wait);
 		// // printList(impl, succ, 5);
 	}
  out:
@@ -281,17 +289,20 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 	me->next = NULL;
 	me->spin = 0;
 	me->tid = cur_thread_id;
-	me->status = NODE_ACTIVE;
+	// me->status = NODE_ACTIVE;
+	me->wait = 1;
 	// printf("tid %d go lock\n", me->tid);
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
 		while (me->spin == 0) {
 			CPU_PAUSE();
-			if(me->status == NODE_SLEEP) {
-				// printf("tid %d is sleep\n", me->tid);
-				waiting_policy_sleep(&me->spin);
-				// printf("tid %d is waked\n", me->tid);
+			if(me->wait == NODE_SLEEP) {
+				// me->wait = 0;
+				// printf("tid %d is sleep status %d\n", me->tid, me->wait);
+				waiting_policy_sleep(&me->wait);
+				// printf("tid %d is waked status %d\n", me->tid, me->wait);
+				
 			}
 		}
 			
@@ -299,8 +310,8 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 		/* set batch to 0 */
 		me->spin = 0;
 	}
-	printf("tid %d lock succ %d\n", me->tid, me->status);
-	// printf("cur_thread_id %d lock succ\n", cur_thread_id);
+	// printf("tid %d lock succ %d\n", me->tid, me->wait);
+	// // // // printf("cur_thread_id %d lock succ\n", cur_thread_id);
 	return 0;
 }
 
@@ -331,7 +342,7 @@ static inline int __utablocking_lock_nonux(utablocking_mutex_t * impl, utablocki
 static int __utablocking_mutex_lock(utablocking_mutex_t * impl, utablocking_node_t * me)
 {
 	int ret;
-	me->status = NODE_ACTIVE;
+	// me->status = NODE_ACTIVE;
 	if (uxthread || nested_level > 1)
 		return __utablocking_lock_ux(impl, me);
 	else
@@ -389,7 +400,7 @@ void utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_node_t * m
 		critical_len[cur_loc] =
 		    ((critical_len[cur_loc] * 7) + duration) >> 3;
 	cur_loc = pop_loc();
-	// printf("me->tid %d unlock\n", me->tid);
+	// // // // printf("me->tid %d unlock\n", me->tid);
 }
 
 int utablocking_mutex_destroy(utablocking_mutex_t * lock)

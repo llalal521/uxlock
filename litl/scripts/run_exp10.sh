@@ -28,12 +28,19 @@ uxthread=10
 #         sleep 1
 # done
 
-echo "utablocking "
+echo "tas "
 for i in 8 16 32 64 128 256 512 1024
 do
-        $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $uxthread -t 20 -T $time -S $core -d $delay -s $SHORT_CRI -g $i > result 
+        $LITL_DIR/libspinlock_spin_then_park.sh  $LITL_DIR/bin/bench_block -u $uxthread -t 20 -T $time -S $core -d $delay -s $SHORT_CRI -g $i > result 
         $LOCAL_DIR/measure.sh ./result 20 10 0
 done
+
+# echo "utablocking "
+# for i in 8 16 32 64 128 256 512 1024
+# do
+#         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $uxthread -t 20 -T $time -S $core -d $delay -s $SHORT_CRI -g $i > result 
+#         $LOCAL_DIR/measure.sh ./result 20 10 0
+# done
 
 # rm result
 

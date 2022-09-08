@@ -119,6 +119,7 @@ static inline void waiting_policy_sleep(volatile int *var) {
              * Note: FUTEX_WAIT_PRIVATE acts like an atomic operation.
              **/
             if (errno == EAGAIN) {
+                // printf("ddd\n");
                 DEBUG("[-1] Race\n");
                 break;
             }
@@ -132,12 +133,12 @@ static inline void waiting_policy_sleep(volatile int *var) {
      * (but eventually it is).
      * Maybe related to memory reordering?
      **/
-    // while (*var != UNLOCKED)
-    //     CPU_PAUSE();
+    while (*var != UNLOCKED)
+        CPU_PAUSE();
 }
 
 static inline void waiting_policy_wake(volatile int *var) {
-    // *var    = 1;
+    *var    = 1;
     int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, UNLOCKED, NULL, 0, 0);
     if (ret == -1) {
         perror("Unable to futex wake");
