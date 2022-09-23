@@ -37,6 +37,8 @@
 #include <mcs.h>
 #elif defined(MCSWAKE)
 #include <mcswake.h>
+#elif defined(MCSSTEAL)
+#include <mcssteal.h>
 #elif defined(CST)
 #include <cst.h>
 #elif defined(MALTHUSIAN)
