@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 #include <pthread.h>
 #include <assert.h>
-#include <uta.h>
+#include <cst.h>
 #include <sched.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -17,17 +17,21 @@
 #include <unistd.h>
 #include <papi.h>
 
-#include "uta.h"
+#include "cst.h"
 #include "interpose.h"
+#include "waiting_policy.h"
 #include "utils.h"
 
 /* Default Number */
-#define NO_UX_MAX_WAIT_TIME     10000000000
-#define SHORT_BATCH_THRESHOLD   1000	/* Should less than 2^16 65536 */
+#define NO_UX_MAX_WAIT_TIME     100000000
+#define SHORT_BATCH_THRESHOLD   65533	/* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
-#define DEFAULT_SHORT_THRESHOLD	10000
+#define DEFAULT_SHORT_THRESHOLD	1000
 #define MAX_CS_LEN		10000000
+
+#define NODE_ACTIVE 1
+#define NODE_SLEEP 0
 
 #define NOT_UX_THREAD 0
 #define IS_UX_THREAD 1
@@ -45,36 +49,25 @@ __thread int loc_stack[STACK_SIZE];
 __thread uint64_t tt_start[MAX_LOC], critical_len[MAX_LOC];
 int cnt[MAX_LOC] = { 0 };
 
-void printList(uta_mutex_t * impl, uta_node_t * me) 
-{
-// 	uta_node_t *cur = me;
-// 	uta_node_t *prevHead = (uta_node_t *) (me->spin & 0xFFFFFFFFFFFF);
-// 	while(cur) {
-// 		printf("->[%d %d %d]", cur->tid, cur->cri_len, (cur->spin >> 48) & 0xFFFF);
-// 		cur = cur->next;																		 
-// 	}
-
-// 	if(!prevHead)
-// 		goto printOut;
-// 	printf("->second  ");
-// 	while(prevHead) {
-// 		printf("->[%d %d]",prevHead->tid, prevHead->cri_len);
-// 		prevHead = prevHead->next;
-// 	}
-// printOut:
-// 	printf("out\n");
-}
-
 /* Per-thread private stack, avoid nest lock cover loc_stack*/
 int push_loc(int loc)
 {
 	stack_pos++;
 	if (stack_pos == STACK_SIZE) {
-		printf("Loc Stack FULL!\n");
+		//// // // // printf("Loc Stack FULL!\n");
 		return -1;
 	}
 	loc_stack[stack_pos] = loc;
 	return 0;
+}
+
+static uint64_t __always_inline rdtscp(void)
+{
+	uint32_t a, d;
+	__asm __volatile("rdtscp; mov %%eax, %0; mov %%edx, %1; cpuid"
+			 : "=r" (a), "=r" (d)
+			 : : "%rax", "%rbx", "%rcx", "%rdx");
+	return ((uint64_t) a) | (((uint64_t) d) << 32);
 }
 
 /* Per-thread private stack */
@@ -86,7 +79,7 @@ int pop_loc(void)
 }
 
 /* Helper functions */
-void *uta_alloc_cache_align(size_t n)
+void *cst_alloc_cache_align(size_t n)
 {
 	void *res = 0;
 	if ((MEMALIGN(&res, L_CACHE_LINE_SIZE, cache_align(n)) < 0) || !res) {
@@ -104,18 +97,17 @@ uint64_t get_current_ns(void)
 	return now.tv_sec * 1000000000LL + now.tv_nsec;
 }
 
-uta_mutex_t *uta_mutex_create(const pthread_mutexattr_t * attr)
+cst_mutex_t *cst_mutex_create(const pthread_mutexattr_t * attr)
 {
-	uta_mutex_t *impl =
-	    (uta_mutex_t *) uta_alloc_cache_align(sizeof(uta_mutex_t));
+	cst_mutex_t *impl =
+	    (cst_mutex_t *) cst_alloc_cache_align(sizeof(cst_mutex_t));
 	impl->tail = 0;
-	impl->threshold = DEFAULT_SHORT_THRESHOLD;
 	return impl;
 }
 
-static int __uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
+static int __cst_mutex_trylock(cst_mutex_t * impl, cst_node_t * me)
 {
-	uta_node_t *expected;
+	cst_node_t *expected;
 	assert(me != NULL);
 	me->next = NULL;
 	expected = NULL;
@@ -124,15 +116,44 @@ static int __uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
 					   __ATOMIC_RELAXED) ? 0 : -EBUSY;
 }
 
-static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
+static void waiting_queue(cst_mutex_t * impl, cst_node_t * me)
 {
-	uta_node_t *succ, *next = me->next, *expected;
+	while(me) {
+		if(me->wait == NODE_SLEEP) {
+			me = me->next;
+			continue;
+		}	
+
+		__atomic_store_n(&me->wait, NODE_SLEEP, __ATOMIC_RELEASE);
+
+		me = me->next;
+	}
+}
+
+static void waking_queue(cst_mutex_t * impl, cst_node_t * me)
+{
+	while(me) {
+		if(me->wait == NODE_ACTIVE) {
+			me = me->next;
+			continue;
+		}	
+		printf("wake %d\n", me->tid);
+		waiting_policy_wake(&me->wait);
+
+		me = me->next;
+	}
+}
+
+static void __cst_mutex_unlock(cst_mutex_t * impl, cst_node_t * me)
+{
+	cst_node_t *succ, *next = me->next, *expected;
 	uint64_t spin;
 	uint64_t batch = (me->spin >> 48) & 0xFFFF;
-	uta_node_t *prevHead = (uta_node_t *) (me->spin & 0xFFFFFFFFFFFF);
-	uta_node_t *secHead, *secTail, *cur;
-	int32_t threshold = impl->threshold;
+	cst_node_t *prevHead = (cst_node_t *) (me->spin & 0xFFFFFFFFFFFF);
+	cst_node_t *secHead, *secTail, *cur;
+
 	int find = 0;
+	// printf("tid %d unlock 1\n", me->tid);
 
 	if (!next) {
 		if (!prevHead) {
@@ -147,26 +168,34 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 			if (__atomic_compare_exchange_n
 			    (&impl->tail, &expected, prevHead->secTail, 0,
 			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
-					
+					// waking_queue(impl, prevHead);
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
-				printList(impl, prevHead);
+				printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
 				goto out;
 			}
 		}
 		while (!(next = me->next))
 			CPU_PAUSE();
 	}
-
 	/*
 	 * Determine the next lock holder and pass the lock by
 	 * setting its spin field
 	 */
+	if(prevHead && prevHead->wait == NODE_ACTIVE) {
+		prevHead->secTail->next = next;
+		__atomic_store_n(&prevHead->spin,
+				0x1000000000000,
+				 __ATOMIC_RELEASE);
+		printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
+		goto out;
+	}
+
 	succ = NULL;
 	if (batch < SHORT_BATCH_THRESHOLD) {
 		/* Find next short CS */
-		if (next->cri_len < threshold) {
+		if (next->wait == NODE_ACTIVE) {
 			find = 1;
 			cur = next;
 			goto find_out;
@@ -175,13 +204,17 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 		secTail = next;
 		cur = next->next;
 		while (cur) {
-			if (cur->cri_len < threshold) {
-				if (prevHead)
+			if (cur->wait == NODE_ACTIVE) {
+				if (prevHead) {
 					prevHead->secTail->next = secHead;
-				else
+				}
+				else {
 					prevHead = secHead;
+				}
 				secTail->next = NULL;
 				prevHead->secTail = secTail;
+				printf("ddddddddddd\n");
+				waking_queue(impl, secHead);
 				find = 1;
 				break;
 			}
@@ -190,26 +223,13 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 		}
  find_out:
 		if (find) {
-#ifdef ADJUST_THRESHOLD
-			if (batch % ADJUST_FREQ == ADJUST_FREQ - 1) {
-				impl->threshold = threshold - 1;
-				// printf("decrease threshold %d\n", threshold);
-			}
-#endif
-			batch = 0;
 			spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
 			/* Important: spin should not be 0 */
 			/* Release barrier */
-			
 			__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
-			printList(impl, cur);
+			printf("cur->tid %d should lock %d %lu\n", cur->tid, cur->wait, cur->spin);
 			goto out;
-		} else {
-#ifdef ADJUST_THRESHOLD
-			impl->threshold = threshold + 1;
-			// printf("increase threshold %d\n", threshold);
-#endif
-		}
+		} 
 	}
 
 	/* Not find anything or batch */
@@ -217,78 +237,95 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 		prevHead->secTail->next = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier */
-		printList(impl, prevHead);
+		waking_queue(impl, prevHead);
 		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
+		printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
+		
 	} else {
-		// printf("succ %p %d %d\n", succ, impl->batch, impl->threshold);
 		succ = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier after */
-		printList(impl, succ);
 		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
+		printf("succ->tid %d should lock %d\n", succ->tid, succ->wait);
 	}
  out:
+	// printf("tid %d unlock out\n", me->tid);
 	nested_level--;		/* Important! reduce nested level *after* release the lock */
 }
 
 /* Using the unmodified MCS lock as the default underlying lock. */
-static int __uta_lock_ux(uta_mutex_t * impl, uta_node_t * me)
+static int __cst_lock_ux(cst_mutex_t * impl, cst_node_t * me, uint64_t timestamp)
 {
-	uta_node_t *tail;
+	cst_node_t *tail;
+	int count = 0;
 	me->next = NULL;
 	me->spin = 0;
 	me->tid = cur_thread_id;
+	me->wait = NODE_ACTIVE;
+
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-		while (me->spin == 0)
+		while (me->spin == 0) {
 			CPU_PAUSE();
+			// sched_yield();
+            if(count++ == 1000 && rdtscp() - timestamp > 1000) {
+				count = 0;
+				me->wait = NODE_SLEEP;
+				printf("tid %d is here %d sleep %lu \n", me->tid, me->wait, me->spin);
+				waiting_policy_sleep(&me->wait);	
+				printf("tid %d is here %d sleep %lu out \n", me->tid, me->wait, me->spin);
+				timestamp = rdtscp();
+			}
+		}		
 	} else {
 		/* set batch to 0 */
-		__atomic_store_n(&me->spin,
-						 0,
-						 __ATOMIC_RELEASE);
+		me->spin = 0;
 	}
+	MEMORY_BARRIER();
+	printf("tid %d lock succ %d\n", me->tid, me->wait);
 	return 0;
 }
 
 /* not-ux-thread reorder if queue not empty */
-static inline int __uta_lock_nonux(uta_mutex_t * impl, uta_node_t * me)
+static inline int __cst_lock_nonux(cst_mutex_t * impl, cst_node_t * me)
 {
 	uint64_t reorder_window_ddl;
 	uint32_t cnt = 0;
-	if (impl->tail == NULL)
-		goto out;
+	uint64_t current_ns;
+	uint64_t sleep_time = 10000;
+	if (cst_mutex_trylock(impl, me) == 0)
+            return 0;
 	/* Someone is holding the lock */
 	reorder_window_ddl = get_current_ns() + NO_UX_MAX_WAIT_TIME;
-	while (get_current_ns() < reorder_window_ddl) {
-		/* Spin-check if the queue is empty */
-		if (impl->tail == NULL) {
-			goto out;
-		}
+	while (current_ns = get_current_ns() < reorder_window_ddl) {
+        sleep_time = sleep_time < reorder_window_ddl - current_ns ?
+            sleep_time : reorder_window_ddl - current_ns;
+        nanosleep((const struct timespec[]){{0, sleep_time}}, NULL);
+        if (cst_mutex_trylock(impl, me) == 0)
+            return 0;
+        sleep_time = sleep_time << 5;
 	}
  out:
-	return __uta_lock_ux(impl, me);
+	return __cst_lock_ux(impl, me, rdtscp());
 }
 
 /* Entry Point: length  */
-static int __uta_mutex_lock(uta_mutex_t * impl, uta_node_t * me)
+static int __cst_mutex_lock(cst_mutex_t * impl, cst_node_t * me)
 {
 	int ret;
 	if (uxthread || nested_level > 1)
-		return __uta_lock_ux(impl, me);
+		return __cst_lock_ux(impl, me, rdtscp());
 	else
-		return __uta_lock_nonux(impl, me);
+		return __cst_lock_nonux(impl, me);
 }
 
 /* lock function with perdict critical (Do not support litl, use llvm instead) */
-int uta_mutex_lock_cri(uta_mutex_t * impl, uta_node_t * me, int loc)
+int cst_mutex_lock_cri(cst_mutex_t * impl, cst_node_t * me, int loc)
 {
-	me->cri_len = critical_len[loc];
 	nested_level++;		/* Per-thread nest level cnter, add before hold the lock */
-	if (nested_level > 1)
-		me->cri_len = 0;	/* highest prio */
-	int ret = __uta_mutex_lock(impl, me);
+
+	int ret = __cst_mutex_lock(impl, me);
 	/* Critical Section Start */
 	tt_start[loc] = PAPI_get_real_cyc();
 	if (cur_loc >= 0)
@@ -298,15 +335,15 @@ int uta_mutex_lock_cri(uta_mutex_t * impl, uta_node_t * me, int loc)
 }
 
 /* lock function orignal*/
-int uta_mutex_lock(uta_mutex_t * impl, uta_node_t * me)
+int cst_mutex_lock(cst_mutex_t * impl, cst_node_t * me)
 {
-	return uta_mutex_lock_cri(impl, me, 0);	/* Default loc 0 */
+	return cst_mutex_lock_cri(impl, me, 0);	/* Default loc 0 */
 }
 
-int uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
+int cst_mutex_trylock(cst_mutex_t * impl, cst_node_t * me)
 {
 
-	if (!__uta_mutex_trylock(impl, me)) {
+	if (!__cst_mutex_trylock(impl, me)) {
 		nested_level++;	/* Per-thread nest level cnter */
 #if COND_VAR
 		REAL(pthread_mutex_lock)
@@ -318,12 +355,12 @@ int uta_mutex_trylock(uta_mutex_t * impl, uta_node_t * me)
 }
 
 /* unlock function orignal*/
-void uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
+void cst_mutex_unlock(cst_mutex_t * impl, cst_node_t * me)
 {
 	uint64_t duration, end_ts;
 	/* Record CS len */
 	end_ts = PAPI_get_real_cyc();
-	__uta_mutex_unlock(impl, me);
+	__cst_mutex_unlock(impl, me);
 	duration = end_ts - tt_start[cur_loc];
 	/* update critical_len */
 	if (critical_len[cur_loc] == 0)
@@ -332,9 +369,10 @@ void uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 		critical_len[cur_loc] =
 		    ((critical_len[cur_loc] * 7) + duration) >> 3;
 	cur_loc = pop_loc();
+	// // // // // printf("me->tid %d unlock\n", me->tid);
 }
 
-int uta_mutex_destroy(uta_mutex_t * lock)
+int cst_mutex_destroy(cst_mutex_t * lock)
 {
 #if COND_VAR
 	REAL(pthread_mutex_destroy)
@@ -346,59 +384,59 @@ int uta_mutex_destroy(uta_mutex_t * lock)
 	return 0;
 }
 
-int uta_cond_init(uta_cond_t * cond, const pthread_condattr_t * attr)
+int cst_cond_init(cst_cond_t * cond, const pthread_condattr_t * attr)
 {
 	return 0;
 }
 
-int uta_cond_timedwait(uta_cond_t * cond, uta_mutex_t * lock,
-		       uta_node_t * me, const struct timespec *ts)
+int cst_cond_timedwait(cst_cond_t * cond, cst_mutex_t * lock,
+		       cst_node_t * me, const struct timespec *ts)
 {
 	return 0;
 }
 
-int uta_cond_wait(uta_cond_t * cond, uta_mutex_t * lock, uta_node_t * me)
+int cst_cond_wait(cst_cond_t * cond, cst_mutex_t * lock, cst_node_t * me)
 {
-	return uta_cond_timedwait(cond, lock, me, 0);
+	return cst_cond_timedwait(cond, lock, me, 0);
 }
 
-int uta_cond_signal(uta_cond_t * cond)
-{
-	return 0;
-}
-
-void uta_thread_start(void)
-{
-}
-
-void uta_thread_exit(void)
-{
-}
-
-void uta_application_init(void)
-{
-}
-
-void uta_application_exit(void)
-{
-}
-
-int uta_cond_broadcast(uta_cond_t * cond)
+int cst_cond_signal(cst_cond_t * cond)
 {
 	return 0;
 }
 
-int uta_cond_destroy(uta_cond_t * cond)
+void cst_thread_start(void)
+{
+}
+
+void cst_thread_exit(void)
+{
+}
+
+void cst_application_init(void)
+{
+}
+
+void cst_application_exit(void)
+{
+}
+
+int cst_cond_broadcast(cst_cond_t * cond)
 {
 	return 0;
 }
 
-void uta_init_context(lock_mutex_t * UNUSED(impl),
+int cst_cond_destroy(cst_cond_t * cond)
+{
+	return 0;
+}
+
+void cst_init_context(lock_mutex_t * UNUSED(impl),
 		      lock_context_t * UNUSED(context), int UNUSED(number))
 {
 }
 
-/* New interfaces in Libuta */
+/* New interfaces in Libcst */
 /* set a thread is uxthread or not */
 void set_ux(int is_ux)
 {

@@ -26,7 +26,7 @@
 #endif
 
 #define TST_NUM 1000000
-#define THD_NUM 40
+#define THD_NUM 100
 #define RECORD_FREQ 1
 
 #define NOP0 __asm__ __volatile__("\nnop\n");
@@ -111,6 +111,10 @@ int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 
 #ifdef	LIBUXSHFL_INTERFACE
 #include "libuxshfl.h"
+#endif
+
+#ifdef	LIBCST_INTERFACE
+#include  "libuta.h"
 #endif
 
 #ifdef	LIBUXPICK_INTERFACE

@@ -13,6 +13,9 @@ typedef struct uta_node {
 	volatile uint64_t spin;
 	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
 
+	 uint64_t tid;
+	char __pad4[pad_to_cache_line(sizeof(uint64_t))];
+
 	struct uta_node *volatile secTail;
 	char __pad2[pad_to_cache_line(sizeof(struct uta_node *))];
 

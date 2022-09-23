@@ -18,11 +18,14 @@ typedef struct utablocking_node {
 	struct utablocking_node *volatile secTail;
 	char __pad2[pad_to_cache_line(sizeof(struct utablocking_node *))];
 
-	 int cri_len;
+	 int status;
 	char __pad3[pad_to_cache_line(sizeof(int))];
 
 	 int tid;
 	char __pad4[pad_to_cache_line(sizeof(int))];
+
+	 int cri_len;
+	char __pad5[pad_to_cache_line(sizeof(int))];
 
 	volatile int wait;
 	char __pad6[pad_to_cache_line(sizeof(int))];

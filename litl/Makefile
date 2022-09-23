@@ -16,7 +16,7 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN= bench  uxactive_bench uta_check nest_bench uta_bench bench_block uta_bench_block utablocking_bench nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
+BIN= bench  utablocking_check uxactive_bench uta_check cst_bench_block nest_bench uta_bench bench_block uta_bench_block utablocking_bench nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
 
@@ -66,6 +66,9 @@ $(BINDIR)/bench_block: bench/bench_block.c $(DIR) $(SOS)
 $(BINDIR)/uta_bench_block: bench/bench_block.c $(DIR) $(SOS)
 	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/  -DLIBUTA_INTERFACE -L./lib  -lutablocking_spin_then_park -g  -o $(BINDIR)/uta_bench_block
 
+$(BINDIR)/cst_bench_block: bench/bench_block.c $(DIR) $(SOS)
+	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/  -DLIBUTA_INTERFACE -L./lib  -lcst_spin_then_park -g  -o $(BINDIR)/cst_bench_block
+
 $(BINDIR)/uxactive_bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUXACTIVE_INTERFACE -L./lib -luxactive_original  -g  -o $(BINDIR)/uxactive_bench
 
@@ -94,7 +97,10 @@ $(BINDIR)/check: bench/check.c $(DIR) $(SOS)
 	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/  -L./lib  -g -o  $(BINDIR)/check
 
 $(BINDIR)/uta_check: bench/check.c $(DIR) $(SOS)
-	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib -lutablocking_spin_then_park -g -o  $(BINDIR)/uta_check
+	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib -luta_original -g -o  $(BINDIR)/uta_check
+
+$(BINDIR)/utablocking_check: bench/check.c $(DIR) $(SOS)
+	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib -lutablocking_spin_then_park -g -o  $(BINDIR)/utablocking_check
 
 $(BINDIR)/rwbench: bench/rwbench.c $(DIR) $(SOS)
 	gcc bench/rwbench.c -lpapi -pthread -O3 -Iinclude/ -L./lib -g -o  $(BINDIR)/rwbench

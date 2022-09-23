@@ -35,6 +35,12 @@
 
 #ifdef MCS
 #include <mcs.h>
+#elif defined(MCSWAKE)
+#include <mcswake.h>
+#elif defined(CST)
+#include <cst.h>
+#elif defined(MALTHUSIAN)
+#include <malthusian.h>
 #elif defined(SPINLOCK)
 #include <spinlock.h>
 #elif defined(TICKET)

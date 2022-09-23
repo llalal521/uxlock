@@ -22,8 +22,8 @@
 #define PLAT_CPU_NUM 16
 #endif
 
-#define TST_NUM 1000000
-#define THD_NUM 20
+#define TST_NUM 100000
+#define THD_NUM 10
 #define RECORD_FREQ 1
 
 #define NOP0 __asm__ __volatile__("\nnop\n");

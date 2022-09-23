@@ -35,18 +35,21 @@ do
 
     sort -g tail_$i > tail_$i-sorted
     per_core_p99_line=$[$line*99/100]
+    per_core_p999_line=$[$line*999/1000]
     per_core_p95_line=$[$line*95/100]
     per_core_p50_line=$[$line*50/100]
-    # echo -n "Core $i Cnt $line P99 "
-    # sed -n "$per_core_p99_line p" tail_$i-sorted | tr '\n' ' '
-    # echo -n "P95 "
-    # sed -n "$per_core_p95_line p" tail_$i-sorted | tr '\n' ' '
-    # echo -n "P50 "
-    # sed -n "$per_core_p50_line p" tail_$i-sorted | tr '\n' ' '
-    # echo -n "avg "
-    # awk '{sum += $1} END {printf "%3.3f\t",sum/NR}' tail_$i-sorted | tr '\n' '\t'  # avg
-    # echo -n "Tail "
-    # tail -n 1 tail_$i-sorted
+    echo -n "Core $i Cnt $line P99 "
+    sed -n "$per_core_p99_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "P95 "
+    sed -n "$per_core_p95_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "P999 "
+    sed -n "$per_core_p999_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "P50 "
+    sed -n "$per_core_p50_line p" tail_$i-sorted | tr '\n' ' '
+    echo -n "avg "
+    awk '{sum += $1} END {printf "%3.3f\t",sum/NR}' tail_$i-sorted | tr '\n' '\t'  # avg
+    echo -n "Tail "
+    tail -n 1 tail_$i-sorted
 
     cat tail_$i >> uxtail_tot
     cur_len=$[$end_len+2]
@@ -71,12 +74,13 @@ done
 
 sort -g uxtail_tot > uxtail_sorted
 p99_line=$[$ux_tot_line*99/100]
+p999_line=$[$ux_tot_line*999/1000]
 p50_line=$[$ux_tot_line*50/100]
 
 sed -n "$p50_line p" uxtail_sorted | tr '\n' '\t' # p50
 awk '{sum += $1} END {printf "%3.3f\t",sum/NR}' uxtail_tot | tr '\n' '\t'  # avg
 sed -n "$p99_line p" uxtail_sorted | tr '\n' '\t' # p99
-
+sed -n "$p999_line p" uxtail_sorted | tr '\n' '\t' # p999
 sed -n "2 p" $FILE
 
 rm -f tail_*
