@@ -125,6 +125,10 @@ int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 #include "libuta.h"
 #endif
 
+#ifdef	LIBASLBLOCK_INTERFACE
+#include "../include/libaslblock.h"
+#endif
+
 void delay_nops(int time)
 {
 	for (int i = 0; i < time; i++) {
@@ -137,8 +141,8 @@ int short_thread_number = 4;
 void request_normal(int tid)
 {
 	tt_startp = PAPI_get_real_cyc();
-#ifdef	LIBUTASCL_INTERFACE
-	epoch_start(0);
+#ifdef	LIBASLBLOCK_INTERFACE
+	// epoch_start(0);
 #endif
 	pthread_mutex_lock(&global_lock);
 #ifndef	LIBUTASCL_INTERFACE
@@ -154,9 +158,8 @@ void request_normal(int tid)
 	
 	// tt_endp = PAPI_get_real_cyc();
 	pthread_mutex_unlock(&global_lock);
-#ifdef	LIBUTASCL_INTERFACE
-	tt_endp = PAPI_get_real_cyc();
-	epoch_end(0, 100000);
+#ifdef	LIBASLBLOCK_INTERFACE
+	// epoch_end(0, 100000);
 #endif
 }
 

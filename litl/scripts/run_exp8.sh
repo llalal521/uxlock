@@ -77,13 +77,21 @@ uxthread=20
 #         # $LOCAL_DIR/measure.sh ./result $i $i 0
 # done
 
-echo "utablocking "
-for i in 40
+echo "aslblocking "
+for i in 20
 do
-        $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
+        $LITL_DIR/libaslblock_spin_then_park.sh  $LITL_DIR/bin/asl_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
         $LOCAL_DIR/measure.sh ./result $i $i 0
         sleep 1
 done
+
+# echo "utablocking "
+# for i in 40
+# do
+#         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
+#         $LOCAL_DIR/measure.sh ./result $i $i 0
+#         sleep 1
+# done
 
 # rm result
 

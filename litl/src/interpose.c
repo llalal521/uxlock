@@ -41,6 +41,8 @@
 #include <mcssteal.h>
 #elif defined(CST)
 #include <cst.h>
+#elif defined(ASLBLOCK)
+#include <aslblock.h>
 #elif defined(MALTHUSIAN)
 #include <malthusian.h>
 #elif defined(SPINLOCK)
