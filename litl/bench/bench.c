@@ -164,7 +164,7 @@ void *thread_routine_transparent(void *arg)
 	int i = 0;
 
 	int core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-
+	printf("dd\n");
 #ifdef UX_PRIORITY
 	if (tid < ux_num)
 		set_ux(1);

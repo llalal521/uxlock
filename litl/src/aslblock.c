@@ -31,7 +31,7 @@
 #define MIN_ADJUST_UNIT		    10
 #define REORDER_THRESHOLD       1000
 #define EPOCH_REQ_THRESHOLD	    100
-__thread reorder_time = 300000;
+__thread reorder_time = 20000000;
 extern __thread cur_thread_id;
 /* Epoch Information */
 #define MAX_EPOCH	256

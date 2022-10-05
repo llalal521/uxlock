@@ -31,7 +31,7 @@
 
 // This is the number of thread to let take the lock before taking the inactive
 // list back to the active list
-#define UNLOCK_COUNT_THRESHOLD 1024 //!\\ Must be a power of 2!
+#define UNLOCK_COUNT_THRESHOLD 128 //!\\ Must be a power of 2!
 
 typedef struct malthusian_node {
     volatile int spin __attribute__((aligned(L_CACHE_LINE_SIZE)));

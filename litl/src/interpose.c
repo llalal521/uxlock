@@ -39,6 +39,8 @@
 #include <mcswake.h>
 #elif defined(MCSSTEAL)
 #include <mcssteal.h>
+#elif defined(MUTEXEE)
+#include <mutexee.h>
 #elif defined(CST)
 #include <cst.h>
 #elif defined(ASLBLOCK)

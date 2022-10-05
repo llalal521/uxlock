@@ -24,7 +24,7 @@
 
 /* Default Number */
 #define NO_UX_MAX_WAIT_TIME     100000000
-#define SHORT_BATCH_THRESHOLD   100000	/* Should less than 2^16 65536 */
+#define SHORT_BATCH_THRESHOLD   60000	/* Should less than 2^16 65536 */
 #define ADJUST_THRESHOLD	1
 #define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
 #define DEFAULT_SHORT_THRESHOLD	1000
@@ -160,7 +160,7 @@ static void waking_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 	// me->status = S_READY;
 	// waiting_policy_wake(&me->wait);
 	// me = me->next;
-	int i = 6;
+	int i = 8;
 	while(me && i != 0) {
 		i--;
 		// __atomic_store_n(&me->status, NODE_ACTIVE, __ATOMIC_RELEASE);
@@ -197,6 +197,8 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 			if (__atomic_compare_exchange_n
 			    (&impl->tail, &expected, prevHead->secTail, 0,
 			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+				prevHead->status = S_READY;
+				waiting_policy_wake(&prevHead->wait);
 				waking_queue(impl, prevHead->next);
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
@@ -254,8 +256,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 				}
 				else {
 					prevHead = secHead;
-					prevHead->status = S_READY;
-					waiting_policy_wake(&prevHead->wait);
 					
 				}
 				secTail->next = NULL;
@@ -297,7 +297,10 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl, utablocking_n
 		spin = 0x1000000000000;	/* batch = 1 */
 		// // printList(impl, prevHead);
 		/* Release barrier */
-		waking_queue(impl, prevHead->next);
+		prevHead->status = S_READY;
+		waiting_policy_wake(&prevHead->wait);
+		if(prevHead->next)
+			waking_queue(impl, prevHead->next);
 		// prevHead->status = S_READY;
 		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
 		// printf("prevHead->tid %d should lock status %d\n", prevHead->tid, prevHead->wait);
@@ -352,7 +355,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 				expected = 1;
 				if(__atomic_compare_exchange_n(&me->status, &expected, 0, 0,  
 						__ATOMIC_ACQ_REL,
-					   __ATOMIC_RELAXED)) {
+					   __ATOMIC_ACQ_REL)) {
 						me->wait = 0;
 						 // printf("tid %d is sleep wait %d status %d\n", me->tid, me->wait, me->status);
 						waiting_policy_sleep(&me->wait);

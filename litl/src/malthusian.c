@@ -51,7 +51,7 @@
 #include "utils.h"
 
 extern __thread unsigned int cur_thread_id;
-
+int len = 0;
 // From D.Dice <https://blogs.oracle.com/dave/entry/a_simple_prng_idiom>
 static inline uint32_t xor_random() {
     static __thread uint32_t rv = 0;
@@ -64,7 +64,7 @@ static inline uint32_t xor_random() {
     v ^= (uint32_t)(v) >> 21;
     v ^= v << 7;
     rv = v;
-
+    // printf("random %d\n", v & (UNLOCK_COUNT_THRESHOLD - 1));
     return v & (UNLOCK_COUNT_THRESHOLD - 1);
 }
 
@@ -92,16 +92,22 @@ static int __malthusian_mutex_lock(malthusian_mutex_t *impl,
     tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
     /* No one there? */
     if (!tail) {
-        return 0;
+        goto succ;
     }
 
     /* Someone there, need to link in */
-    tail->next = me;
-    COMPILER_BARRIER();
+    // tail->next = me;
+    // COMPILER_BARRIER();
+    // printf("tid %d in queue %d\n", me->tid, me->spin);
+     __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
     /* Spin on my spin variable */
-    printf("tid %d is sleep\n", me->tid);
+    // printf("tid %d is sleep\n", me->tid);
     waiting_policy_sleep(&me->spin);
-    printf("tid %d is waked\n", me->tid);
+    // printf("tid %d out queue\n", me->tid);
+    // printf("tid %d is waked\n", me->tid);
+succ:
+    /* Should preseve acquire semantic here */
+    MEMORY_BARRIER();
     return 0;
 }
 
@@ -155,7 +161,7 @@ passive_set_pop_back(malthusian_mutex_t *impl) {
 
     elem->prev = 0;
     elem->next = 0;
-
+    // printf("pop %d back\n", elem->tid);
     return elem;
 }
 
@@ -173,7 +179,7 @@ passive_set_pop_front(malthusian_mutex_t *impl) {
 
     elem->prev = 0;
     elem->next = 0;
-
+    // printf("pop %d\n", elem->tid);
     return elem;
 }
 
@@ -182,7 +188,7 @@ static inline void passive_set_push_front(malthusian_mutex_t *impl,
     malthusian_node_t *prev_head = impl->passive_set_head;
     elem->next                   = prev_head;
     elem->prev                   = 0;
-
+    // printf("push %d\n", elem->tid);
     impl->passive_set_head = elem;
 
     if (prev_head != 0) {
@@ -233,8 +239,9 @@ static void __malthusian_mutex_unlock(malthusian_mutex_t *impl,
         DEBUG("[%d] Insert T as successor of me\n", cur_thread_id);
         malthusian_node_t *elem = passive_set_pop_back(impl);
         if (elem != 0) {
-            // printf("me->tid %d insert head wake %d\n", me->tid, me->next->tid);
+            len--;
             __malthusian_insert_at_head(impl, me, elem);
+            //  printf("me->tid %d insert head wake %d\n", me->tid, me->next->tid);
             waiting_policy_wake(&me->next->spin);
             return;
         }
@@ -248,6 +255,7 @@ static void __malthusian_mutex_unlock(malthusian_mutex_t *impl,
          * from the head of the passive list, insert it into the
          * queue at the tail and pass ownership to that thread."
          **/
+        //  printf("here no next %d ?\n", me->tid);
         DEBUG("[%d - %p] Trying to extract from PS because no waiter\n",
               cur_thread_id, me);
         malthusian_node_t *extract_next = passive_set_pop_front(impl);
@@ -268,15 +276,16 @@ static void __malthusian_mutex_unlock(malthusian_mutex_t *impl,
         } else {
             DEBUG("[%d - %p] Fetching thread from PS %p\n", cur_thread_id, me,
                   extract_next);
-            // printf("2 wake tid %d insert %d \n", me->next->tid, me->tid);
+            len--;
             __malthusian_insert_at_head(impl, me, extract_next);
+            // printf("2 wake tid %d insert %d \n", me->next->tid, me->tid);
             waiting_policy_wake(&me->next->spin);
             return;
         }
     }
 
     /**
-     * "At unlock-time, if there exists any intermediate nodes in the
+     * "At unlock-time, if there exists anypa intermediate nodes in the
      * queue between the owner's node and the current tail, then we
      * have a surplus threads in the ACS and we can unlink and excise
      * one of those nodes and transfer it to the head of the passive
@@ -297,12 +306,13 @@ static void __malthusian_mutex_unlock(malthusian_mutex_t *impl,
             CPU_PAUSE();
 
         malthusian_node_t *new_next = me->next->next;
+        // printf("push %d in passive\n", me->next->tid);
         passive_set_push_front(impl, me->next);
-        printf("push %d in passive\n", me->next->tid);
+        len++;
         me->next = new_next;
         COMPILER_BARRIER();
     }
-    // printf("3 wake tid %d \n", me->next->tid);
+    // printf("passive len %d \n", len);
     /* Unlock next one */
     waiting_policy_wake(&me->next->spin);
 }

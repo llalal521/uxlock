@@ -5,19 +5,27 @@ LITL_DIR=$LOCAL_DIR/..
 LITLLIB_DIR=$LITL_DIR/lib
 export LD_LIBRARY_PATH=$LITLLIB_DIR:$LD_LIBRARY_PATH
 
-delay=100
+delay=1000
 core=20
-time=1
-LONG_CRI=512
+time=2
+LONG_CRI=8
 SHORT_CRI=8
-uxthread=20
+uxthread=40
+
+echo "mutexee "
+for i in 20
+do
+        $LITL_DIR/libmutexee_original.sh  $LITL_DIR/bin/bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+        $LOCAL_DIR/measure.sh ./result $i $i 0
+        sleep 2
+done
 
 # echo "pthread_lock "
-# for i in  40
+# for i in  20
 # do
 #         $LITL_DIR/libpthreadinterpose_original.sh  $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
 #         $LOCAL_DIR/measure.sh ./result  $i $i 0
-#         sleep 1
+#         sleep 2
 # done
 
 # echo "tas "
@@ -36,6 +44,13 @@ uxthread=20
 #         sleep 1
 # done
 
+# echo "MCS "
+# for i in  40
+# do
+#         $LITL_DIR/libmcs_spin_then_park.sh $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+#         $LOCAL_DIR/measure.sh ./result $i $i 0
+#         sleep 1
+# done
 
 # echo "MCSWAKE "
 # for i in  40
@@ -55,17 +70,9 @@ uxthread=20
 
 
 # echo "MALTHUSIAN "
-# for i in  20
+# for i in  40
 # do
-#         $LITL_DIR/libmalthusian_spinlock.sh $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
-#         # $LOCAL_DIR/measure.sh ./result $i $i 0
-#         sleep 1
-# done
-
-# echo "MCS "
-# for i in  10
-# do
-#         $LITL_DIR/libmcs_original.sh $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+#         $LITL_DIR/libmalthusian_spin_then_park.sh $LITL_DIR/bin/bench_block -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
 #         $LOCAL_DIR/measure.sh ./result $i $i 0
 #         sleep 1
 # done
@@ -77,19 +84,21 @@ uxthread=20
 #         # $LOCAL_DIR/measure.sh ./result $i $i 0
 # done
 
-echo "aslblocking "
-for i in 20
-do
-        $LITL_DIR/libaslblock_spin_then_park.sh  $LITL_DIR/bin/asl_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
-        $LOCAL_DIR/measure.sh ./result $i $i 0
-        sleep 1
-done
-
-# echo "utablocking "
+# echo "aslblocking "
 # for i in 40
 # do
-#         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
+#         $LITL_DIR/libaslblock_spin_then_park.sh  $LITL_DIR/bin/asl_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result 
 #         $LOCAL_DIR/measure.sh ./result $i $i 0
+#         sleep 1
+# done
+
+
+
+# echo "utablocking "
+# for i in 20
+# do
+#         $LITL_DIR/libutablocking_spin_then_park.sh  $LITL_DIR/bin/uta_bench_block -u $i -t $i -T $time -S $core -d $delay -s $SHORT_CRI -g $LONG_CRI > result
+#         # $LOCAL_DIR/measure.sh ./result $i $i 0
 #         sleep 1
 # done
 
