@@ -165,12 +165,12 @@ void request_normal(int tid)
 
 void *thread_routine_transparent(void *arg)
 {
+	
 	uint64_t duration;
 	double wait;
 	int64_t tid = (int64_t) arg;
 	int record_cnt = 0;
 	int i = 0, core_id;
-
 #ifdef UX_PRIORITY
 	if (tid < ux_num) {
         core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
@@ -230,7 +230,6 @@ int main(int argc, char *argv[])
 	int sleep_time = 3;
 	int nb_thread = 20;
 	void *(*thread_entry)(void *);
-
 	srand(10);
 	mode = 0;
 	delay = 100;
@@ -287,7 +286,6 @@ int main(int argc, char *argv[])
 		exit(-1);
 		break;
 	}
-	
 	//long critical to uon-ux thread
 	long_shared_variables_memory_area =
 	    (uint64_t *) malloc(long_number_of_shared_variables * 64);

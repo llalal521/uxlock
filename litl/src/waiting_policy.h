@@ -104,6 +104,51 @@ static inline void waiting_policy_sleep(volatile int *var) {
 
     if (*var == UNLOCKED) {
         // printf("here return\n");
+        // *var = 0;
+        return;
+    }
+        
+
+    int ret = 0;
+    while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, LOCKED, NULL, 0,
+                            0)) != 0) {
+        if (ret == -1 && errno != EINTR) {
+            /**
+             * futex returns EAGAIN if *var is not 0 anymore.
+             * This can happen when the value of *var is changed by another
+             *thread after the spinning loop.
+             * Note: FUTEX_WAIT_PRIVATE acts like an atomic operation.
+             **/
+            if (errno == EAGAIN) {
+                // printf("ddd\n");
+                DEBUG("[-1] Race\n");
+                break;
+            }
+            perror("Unable to futex wait");
+            exit(-1);
+        }
+    }
+    // printf("ddd1\n");
+    /**
+     * *var is not always 1 immediately when the thread wakes up
+     * (but eventually it is).
+     * Maybe related to memory reordering?
+     **/
+    while (*var != UNLOCKED)
+        CPU_PAUSE();
+}
+
+static inline void waiting_policy_sleep1(volatile int *var) {
+    // First spin with a given threshold.
+    unsigned long long i = 0;
+    while (i < SPINNING_THRESHOLD && *var != UNLOCKED) {
+        i++;
+        CPU_PAUSE();
+    }
+
+    if (*var == UNLOCKED) {
+        // printf("here return\n");
+        *var = 0;
         return;
     }
         

@@ -1,64 +1,324 @@
-#define _GNU_SOURCE
+/*
+ * File: cstmcsvar.c
+ * Author: Sanidhya Kasyap <sanidhya@gatech.edu>
+ *         Changwoo Min <changwoo@gatech.edu>
+ *
+ * Description:
+ *      CSTMCSVAR lock implementation
+ *
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2017 Sanidhya Kashyap, Changwoo Min
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-#include <sys/mman.h>
-#include <pthread.h>
-#include <assert.h>
-#include <cst.h>
-#include <sched.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <signal.h>
-#include <unistd.h>
-#include <papi.h>
+
+
 
 #include "cst.h"
-#include "interpose.h"
-#include "waiting_policy.h"
-#include "utils.h"
 
-/* Default Number */
-#define NO_UX_MAX_WAIT_TIME     100000000
-#define SHORT_BATCH_THRESHOLD   65533	/* Should less than 2^16 65536 */
-#define ADJUST_THRESHOLD	1
-#define ADJUST_FREQ		100	/* Should less than SHORT_BATCH_THRESHOLD */
-#define DEFAULT_SHORT_THRESHOLD	1000
-#define MAX_CS_LEN		10000000
+#define PARKING
+// #define CST_DEBUG
+/**
+ * common
+ */
+#define INIT_LIST_HEAD(ptr)                                                    \
+	do { \
+		(ptr)->next = (ptr);  \
+		(ptr)->prev = (ptr);  \
+	} while(0)
 
-#define NODE_ACTIVE 1
-#define NODE_SLEEP 0
+#define list_entry(ptr, type, member)                                          \
+	({const typeof( ((type *)0)->member ) *__mptr = (ptr);                     \
+	 (type *)( (char *)__mptr - offsetof(type,member) );})
 
-#define NOT_UX_THREAD 0
-#define IS_UX_THREAD 1
-__thread int nested_level = 0;
-__thread unsigned int uxthread = NOT_UX_THREAD;
-extern __thread unsigned int cur_thread_id;
 
-__thread int cur_loc = -1;
-__thread int stack_pos = -1;
-#define STACK_SIZE 128
-__thread int loc_stack[STACK_SIZE];
+#define list_for_each_entry(pos, head, member)                                 \
+	for (pos = list_entry((struct list_head *)(head)->next, typeof(*pos),      \
+			      member);                                             \
+	     &pos->member != (head);                                               \
+	     pos = list_entry((struct list_head *)pos->member.next, typeof(*pos),  \
+			      member))
 
-/* Predict CS by location */
-#define MAX_LOC 128
-__thread uint64_t tt_start[MAX_LOC], critical_len[MAX_LOC];
-int cnt[MAX_LOC] = { 0 };
+#define smp_swap(__ptr, __val)                                                 \
+	__sync_lock_test_and_set(__ptr, __val)
+#define smp_cas(__ptr, __oval, __nval)                                         \
+	__sync_bool_compare_and_swap(__ptr, __oval, __nval)
+#define smp_faa(__ptr, __val)                                                  \
+	__sync_fetch_and_add(__ptr, __val)
 
-/* Per-thread private stack, avoid nest lock cover loc_stack*/
-int push_loc(int loc)
+#define min(a, b) ((a)<(b)?(a):(b))
+#define ACCESS_ONCE(x) (*(__volatile__ __typeof__(x) *)&(x))
+
+#ifdef CST_DEBUG
+typedef enum {
+	RED,
+	GREEN,
+	BLUE,
+	MAGENTA,
+	YELLOW,
+	CYAN,
+	END,
+} color_num;
+
+static char colors[END][8] = {
+	"\x1B[31m",
+	"\x1B[32m",
+	"\x1B[34m",
+	"\x1B[35m",
+	"\x1b[33m",
+	"\x1b[36m",
+};
+static unsigned long counter = 0;
+
+static __thread int __tcid = -1;
+
+#define dprintf(__fmt, ...)                                                    \
+	do {                                                                       \
+		smp_faa(&counter, 1);                                                  \
+		fprintf(stderr, "%s [DBG:%010lu: %d (%s: %d)]: " __fmt,                \
+			colors[__tcid % END], counter, __tcid,                         \
+			__func__, __LINE__, ##__VA_ARGS__);                            \
+	} while(0);
+#define dassert(v)      assert((v))
+#define NUM_RELEASES        1024
+#define LOOP_MOD            100
+#define declare_loop_counter(v) unsigned long (v) = 0;
+#define dprintf_loop(v, __fmt, ...)                                            \
+	do {                                                                       \
+		if (((v) % LOOP_MOD) == 0) {                                           \
+			smp_faa(&counter, 1);                                              \
+			fprintf(stderr, "%s [DBG:%010lu: %d (%s: %d)]: (count: %lu) "      \
+				__fmt, colors[__tcid % END], counter, __tcid,              \
+				__func__, __LINE__, (v), ##__VA_ARGS__);                   \
+		}                                                                      \
+		++(v);                                                                 \
+	} while(0)
+#define update_cid(q, c)                                                       \
+	do {                                                                       \
+		(q)->cid = (c);                                                        \
+		__tcid = (c);                                                          \
+	} while (0)
+#define inc_atomic_count()                                                     \
+	do {                                                                       \
+		smp_faa(&atomic_count, 1);                                             \
+	} while(0)
+#define inc_release_count()                                                    \
+	do {                                                                       \
+		smp_faa(&release_count, 1);                                            \
+	} while(0)
+#define inc_casfail_count()                                                    \
+	do {                                                                       \
+		smp_faa(&cas_failures, 1);                                             \
+	} while(0)
+#define print_accoutning()                                                     \
+	do {                                                                       \
+		if ((release_count % NUM_RELEASES) == 0) {                             \
+			dprintf("#releases: %lu, #atomics: %lu #cas fails: %lu\n",         \
+				release_count, atomic_count, cas_failures);                \
+		}                                                                      \
+	} while(0)
+
+#define print_numa_list(head)                                                  \
+	do {                                                                       \
+		struct snode *pos;                                                     \
+		dprintf(" nuam list: ");                                               \
+		list_for_each_entry(pos, head, numa_node) {                            \
+			fprintf(stderr, "numa: 0x%08lx, nid: %02d |--> 0x%08lx ",          \
+				(uintptr_t)(struct list_head *)&pos->numa_node, pos->nid,  \
+				(uintptr_t)(struct list_head *)pos->numa_node.next);       \
+		}                                                                      \
+		fprintf(stderr, "\n");                                                 \
+	} while (0)
+
+static uint64_t atomic_count  ____cacheline_aligned;
+static uint64_t release_count ____cacheline_aligned;
+static uint64_t cas_failures  ____cacheline_aligned;
+
+#else
+#define declare_loop_counter(v) do { } while(0)
+#define dprintf_loop(v, __fmt, ...) do { } while(0)
+#define update_cid(q, c) do { } while(0)
+#define inc_atomic_count() do { } while(0)
+#define inc_release_count() do { } while(0)
+#define inc_casfail_count() do { } while(0)
+#define dprintf(__fmt, ...) do { } while(0)
+#define dassert(v)  do { } while(0)
+#define print_accoutning() do { } while(0)
+#define print_numa_list(head) do { } while(0)
+#define print_snode_list(snode) do { } while(0)
+#endif /* end of CST_DEBUG */
+
+#ifdef MUTEX_TASK_CONTEXT
+#define current                 getpid()
+#define get_task_priority(p)    getpriority(PRIO_PROCESS, p)
+#define set_task_priority(p, n) setpriority(PRIO_PROCESS, p, n)
+#define boost_task_priority(p, n)                                              \
+	do {                                                                       \
+		if (n != -20)                                                          \
+		set_task_priority(p, -20);                                             \
+	} while (0)
+#define __get_priority()        get_task_priority((current))
+#define __set_priority(n)       nice(n)
+#else
+#define current                     (-1)
+#define get_task_priority(p)        (0)
+#define set_task_priority(p)        do { } while (0)
+#define boost_task_priority(p,n)    do { } while (0)
+#define __get_priority()            do { } while (0)
+#define __set_priority(n)           do { } while (0)
+#endif /* end of MUTEX_TASK_CONTEXT */
+
+#ifdef __KERNEL__
+#define get_task(v)                                                            \
+	do {                                                                       \
+		v->task = current;                                                     \
+	} while (0)
+#else
+#define get_task(v)                                                            \
+	do {                                                                       \
+		v->pid = current;                                                      \
+	} while (0)
+#endif
+
+#ifndef __KERNEL__
+
+extern __thread cur_thread_id;
+static inline void __list_add(struct list_head *new,
+			      struct list_head *prev,
+			      struct list_head *next)
 {
-	stack_pos++;
-	if (stack_pos == STACK_SIZE) {
-		//// // // // printf("Loc Stack FULL!\n");
-		return -1;
-	}
-	loc_stack[stack_pos] = loc;
-	return 0;
+	next->prev = new;
+	new->next = next;
+	new->prev = prev;
+	prev->next = new;
+}
+
+static inline void list_add(struct list_head *new, struct list_head *head)
+{
+	__list_add(new, head, head->next);
+}
+
+static inline void list_add_tail(struct list_head *new, struct list_head *head)
+{
+	__list_add(new, head->prev, head);
+}
+
+static inline void __list_del(struct list_head *prev, struct list_head *next)
+{
+	next->prev = prev;
+	prev->next = next;
+}
+
+static inline void list_del(struct list_head *entry)
+{
+	__list_del((struct list_head *)entry->prev,
+		   (struct list_head *)entry->next);
+	entry->next = (void *) 0;
+	entry->prev = (void *) 0;
+}
+
+static inline int list_empty(struct list_head *head)
+{
+	return head->next == head;
+}
+
+#define list_for_each_entry_safe(pos, n, head, member)			\
+	for (pos = list_entry((struct list_head *)(head)->next, typeof(*pos), member),	\
+		n = list_entry((struct list_head *)pos->member.next, typeof(*pos), member);	\
+	     &pos->member != (head); 					\
+	     pos = n, n = list_entry((struct list_head *)n->member.next, typeof(*n), member))
+#endif
+
+#define UNLOCK_COUNT_THERSHOLD 	1024
+
+static inline uint32_t xor_random(int cid)
+{
+	static __thread uint32_t __rv;
+	uint32_t v;
+
+	if (__rv == 0)
+		__rv = (uint32_t)cid;
+
+	v = __rv;
+	v ^= v << 6;
+	v ^= (uint32_t)(v) >> 21;
+	v ^= v << 7;
+	__rv = v;
+
+	return v & (UNLOCK_COUNT_THERSHOLD - 1);
+}
+
+/*
+ * Declarations
+ */
+static inline int update_qnode_state_release(struct qnode *qnode,
+					     uint64_t state);
+static inline void update_qnode_state_park_to_unpark(struct qnode *qnode,
+						     uint64_t count);
+static inline void wake_up_all_waiters_in_snode(struct snode *snode);
+static inline int release_any_active_waiter(struct snode *snode,
+					    struct qnode *qnode, uint64_t count);
+static inline int park_qnode(cstmcsvar_lock *lock, struct snode *snode,
+			     struct qnode *qnode);
+
+static inline uint16_t numa_get_gid(uint64_t ngid_vec, uint16_t nid);
+static inline struct snode *get_snode(cstmcsvar_lock *lock, uint16_t nid);
+static inline struct snode *find_snode(cstmcsvar_lock *lock, uint16_t nid);
+static inline struct snode *add_snode(cstmcsvar_lock *lock, uint16_t nid,
+				      uint16_t gid);
+static inline struct snode *alloc_snode(cstmcsvar_lock *lock, int32_t nid);
+static inline void *malloc_at_numa_node(size_t size, int32_t nid);
+
+static inline void smp_mb(void)
+{
+	__asm__ __volatile__("mfence":::"memory");
+}
+
+static inline void smp_rmb(void)
+{
+	__asm__ __volatile__("lfence":::"memory");
+}
+
+static inline void smp_wmb(void)
+{
+	__asm__ __volatile__("sfence":::"memory");
+}
+
+static inline void barrier(void)
+{
+	__asm__ __volatile__("":::"memory");
+}
+
+static void __always_inline numa_get_nid(struct nid_clock_info *v)
+{
+	// const static uint32_t NUMA_ID_BASE = 1;
+	// uint32_t a, d, c;
+	// __asm__ volatile("rdtscp" : "=a"(a), "=d"(d), "=c"(c));
+
+	// /* nid must be positive. */
+	// v->timestamp = (uint64_t)a | (((uint64_t)d) << 32);
+	// v->nid = ((c & 0xFFF) / CORES_PER_SOCKET) + NUMA_ID_BASE;
+	// v->cid = c & 0xFFF;
+
+	// dprintf("nid: %d, timestamp: %lu\n", v->nid, v->timestamp);
+	return;
 }
 
 static uint64_t __always_inline rdtscp(void)
@@ -70,376 +330,735 @@ static uint64_t __always_inline rdtscp(void)
 	return ((uint64_t) a) | (((uint64_t) d) << 32);
 }
 
-/* Per-thread private stack */
-int pop_loc(void)
+static inline void list_add_unsafe(struct list_head *new,
+				   struct list_head *head)
 {
-	if (stack_pos < 0)
-		return -1;	/* Return -1, give it to cur_loc. */
-	return loc_stack[stack_pos--];
+	volatile struct list_head *old;
+
+	/* there can be concurrent enqueuers */
+	inc_atomic_count();
+	new->next = head->next;
+
+	old = smp_swap(&head->next, new);
+	new->next = old;
+	dprintf("updated new->next to old (%p)\n", old);
+	smp_wmb();
 }
 
-/* Helper functions */
-void *cst_alloc_cache_align(size_t n)
+static inline void list_del_unsafe(struct list_head *entry,
+				   struct list_head *head)
 {
-	void *res = 0;
-	if ((MEMALIGN(&res, L_CACHE_LINE_SIZE, cache_align(n)) < 0) || !res) {
-		fprintf(stderr, "MEMALIGN(%llu, %llu)", (unsigned long long)n,
-			(unsigned long long)cache_align(n));
-		exit(-1);
-	}
-	return res;
-}
-
-uint64_t get_current_ns(void)
-{
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	return now.tv_sec * 1000000000LL + now.tv_nsec;
-}
-
-cst_mutex_t *cst_mutex_create(const pthread_mutexattr_t * attr)
-{
-	cst_mutex_t *impl =
-	    (cst_mutex_t *) cst_alloc_cache_align(sizeof(cst_mutex_t));
-	impl->tail = 0;
-	return impl;
-}
-
-static int __cst_mutex_trylock(cst_mutex_t * impl, cst_node_t * me)
-{
-	cst_node_t *expected;
-	assert(me != NULL);
-	me->next = NULL;
-	expected = NULL;
-	return __atomic_compare_exchange_n(&impl->tail, &expected, me, 0,
-					   __ATOMIC_ACQ_REL,
-					   __ATOMIC_RELAXED) ? 0 : -EBUSY;
-}
-
-static void waiting_queue(cst_mutex_t * impl, cst_node_t * me)
-{
-	while(me) {
-		if(me->wait == NODE_SLEEP) {
-			me = me->next;
-			continue;
-		}	
-
-		__atomic_store_n(&me->wait, NODE_SLEEP, __ATOMIC_RELEASE);
-
-		me = me->next;
+	/* handling contention with the enqueuers */
+	if (head->next == entry) {
+		inc_atomic_count();
+		if (smp_cas(&head->next, entry, entry->next)) {
+			return;
+		} else
+			inc_casfail_count();
 	}
 }
 
-static void waking_queue(cst_mutex_t * impl, cst_node_t * me)
-{
-	while(me) {
-		if(me->wait == NODE_ACTIVE) {
-			me = me->next;
-			continue;
-		}	
-		printf("wake %d\n", me->tid);
-		waiting_policy_wake(&me->wait);
 
-		me = me->next;
-	}
+int cst_mutex_trylock(cst_mutex_t *L, cst_node_t *I)
+{
+	return 0;
 }
 
-static void __cst_mutex_unlock(cst_mutex_t * impl, cst_node_t * me)
+static inline void acquire_global(cstmcsvar_lock *lock, struct snode *snode)
 {
-	cst_node_t *succ, *next = me->next, *expected;
-	uint64_t spin;
-	uint64_t batch = (me->spin >> 48) & 0xFFFF;
-	cst_node_t *prevHead = (cst_node_t *) (me->spin & 0xFFFFFFFFFFFF);
-	cst_node_t *secHead, *secTail, *cur;
+	struct snode *old_snode;
 
-	int find = 0;
-	// printf("tid %d unlock 1\n", me->tid);
+	snode->gnext = NULL;
+	snode->status = STATE_PARKED;
 
-	if (!next) {
-		if (!prevHead) {
-			expected = me;
-			if (__atomic_compare_exchange_n
-			    (&impl->tail, &expected, 0, 0, __ATOMIC_RELEASE,
-			     __ATOMIC_RELAXED)) {
-				goto out;
+	old_snode = (struct snode *)smp_swap(&lock->gtail, snode);
+	if (!old_snode) {
+		snode->status = STATE_LOCKED;
+		return;
+	}
+
+	barrier();
+	old_snode->gnext = snode; /* caching the next snode */
+
+	while(snode->status == STATE_PARKED) {
+		smp_rmb();
+	}
+	dprintf("got global lock for nid: %d\n", snode->nid);
+}
+
+static int __cstmcsvar_acquire_local_lock(cstmcsvar_lock *lock,
+					  struct snode *snode,
+					  struct qnode *qnode, int cid,
+					  uint64_t timestamp)
+{
+	struct qnode cur_qnode;
+	struct qnode *old_qnode, *next_qnode;
+	int count = 0;
+	int allow_local_acquire = 0;
+	int ret;
+
+	cur_qnode.cid = cid;
+	cur_qnode.my_snode = snode;
+     requeue:
+	cur_qnode.status = UNPARKED_WAITER_STATE;
+	cur_qnode.next = NULL;
+	cur_qnode.in_list = false;
+	old_qnode = smp_swap(&snode->qtail, &cur_qnode);
+	
+	if (old_qnode) {
+		barrier();
+		old_qnode->next = &cur_qnode;
+		barrier();
+
+		for (;;) {
+			if (LOCKING_STATE(cur_qnode.status) != WAIT)
+				break;
+			// printf("cur %d in while\n", cur_thread_id);
+			if ((rdtscp() - timestamp) > 100000) {
+				
+				count = 0;
+				ret = park_qnode(lock, snode, &cur_qnode);
+				if (ret == QNODE_UNPARKED)
+					timestamp = rdtscp();
+				else {
+					if (LOCKING_STATE(cur_qnode.status) ==
+					    ACQUIRE_PARENT) {
+						dprintf("status: %lu\n",
+						       LOCKING_STATE(cur_qnode.status));
+						break;
+					} else if (LOCKING_STATE(cur_qnode.status) ==
+						   REQUEUE)
+						goto requeue;
+				}
 			}
-		} else {
-			expected = me;
-			if (__atomic_compare_exchange_n
-			    (&impl->tail, &expected, prevHead->secTail, 0,
-			     __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
-					// waking_queue(impl, prevHead);
-				__atomic_store_n(&prevHead->spin,
-						 0x1000000000000,
-						 __ATOMIC_RELEASE);
-				printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
-				goto out;
-			}
+			smp_rmb();
 		}
-		while (!(next = me->next))
-			CPU_PAUSE();
+		if (LOCKING_STATE(cur_qnode.status) < ACQUIRE_PARENT)
+			allow_local_acquire = 1;
+	}
+	next_qnode = cur_qnode.next;
+	snode->qnext = next_qnode; /* caching the next qnode */
+	if (!next_qnode) {
+		barrier();
+		if (!smp_cas(&snode->qtail, &cur_qnode, &snode->qnext)) {
+			while(!cur_qnode.next)
+				smp_rmb();
+			snode->qnext = cur_qnode.next;
+		}
+	}
+	// printf("cur_thread_id %d lock success sss3 %d\n", cur_thread_id, allow_local_acquire);
+	if (!allow_local_acquire) {
+		barrier();
+		acquire_global(lock, snode);
+		// printf("lock local suuccess %d\n", cur_thread_id);
+		lock->serving_socket = snode;
+	}
+	return 0;
+}
+
+int cst_mutex_lock(cst_mutex_t *lock, cst_node_t *me)
+{
+	// printf("cur_thread_id %d go lock\n", cur_thread_id);
+	struct nid_clock_info info;
+	struct snode *snode;
+	int32_t nid;
+
+	/* get both timestamp and node id */
+	// numa_get_nid(&info);
+	uint32_t a, d, c;
+	__asm__ volatile("rdtscp" : "=a"(a), "=d"(d), "=c"(c));
+
+	/* nid must be positive. */
+	info.timestamp = (uint64_t)a | (((uint64_t)d) << 32);
+	info.nid = 1;
+	info.cid = c & 0xFFF;
+
+	nid = info.nid;
+	dprintf("called for acquire\n");
+
+	snode = get_snode(lock, nid);
+	// printf("cur_thread_id %d go %d local lock\n", cur_thread_id, info.cid);
+	__cstmcsvar_acquire_local_lock(lock, snode, me, info.cid,
+				       info.timestamp);
+	// printf("cur_thread_id %d lock success\n", cur_thread_id);
+	return 0;
+}
+
+static inline void __cstmutex_global_unlock(cstmcsvar_lock *lock,
+					    struct snode *snode)
+{
+	if (!snode->gnext) {
+		if (smp_cas(&lock->gtail, snode, NULL)) {
+			return;
+		}
+
+		while(!snode->gnext)
+			smp_rmb();
+	}
+	snode->gnext->status = STATE_LOCKED;
+	smp_wmb();
+}
+
+static inline void __cstmutex_local_unlock(cstmcsvar_lock *lock,
+					   struct snode *snode)
+{
+	struct qnode *next_qnode = snode->qnext;
+	barrier();
+	if (!next_qnode) {
+		if (smp_cas(&snode->qtail, &snode->qnext, NULL)) {
+			wake_up_all_waiters_in_snode(snode);
+			// printf("local unlock fast %d return\n", cur_thread_id);
+			return;
+		}
+
+		while(!snode->qnext)
+			smp_rmb();
+		next_qnode = snode->qnext;
+	}
+	if(!update_qnode_state_release(next_qnode, ACQUIRE_PARENT)) {
+#ifndef PARKING
+		update_qnode_state_park_to_unpark(next_qnode, ACQUIRE_PARENT);
+#else
+		if (!release_any_active_waiter(snode,
+					       next_qnode, ACQUIRE_PARENT)) {
+			dprintf("waking up waiter: %d\n", next_qnode->cid);
+			spin_lock(&snode->wait_lock);
+			next_qnode->in_list = false;
+			list_del(&next_qnode->wait_node);
+			update_qnode_state_park_to_unpark(next_qnode, ACQUIRE_PARENT);
+			spin_unlock(&snode->wait_lock);
+		}
+#endif
+	}
+	smp_wmb();
+}
+
+void cst_mutex_unlock(cst_mutex_t *lock, cst_node_t* me)
+{
+	struct qnode *next_qnode;
+	struct snode *snode;
+	uint64_t cur_count;
+	snode = (struct snode *)lock->serving_socket;
+	// cur_count = ++snode->num_proc;
+	// if(cur_count == NUMA_BATCH_SIZE) {
+	// 	__cstmutex_global_unlock(lock, snode);
+	// 	if (!list_empty(&snode->wait_list))
+	// 		wake_up_all_waiters_in_snode(snode);
+	// 	__cstmutex_local_unlock(lock, snode);
+	// 	snode->num_proc = 0;
+		
+	// 	return;
+	// }
+	next_qnode = snode->qnext;
+	if (next_qnode) {
+		if(!update_qnode_state_release(next_qnode, cur_count)) {
+#ifndef PARKING
+			update_qnode_state_park_to_unpark(next_qnode, cur_count);
+#else
+			if(!release_any_active_waiter(snode,
+						      next_qnode, cur_count)) {
+				dprintf("could not find any next_qnode\n");
+				goto out;
+			}
+#endif
+		}
+		// printf("next qnode acquire\n");
+		// printf("next_qnode got the lock: %d\n", next_qnode->cid);
+		return;
+	}
+
+     out:
+	//  printf("out\n");
+	__cstmutex_global_unlock(lock, snode);
+	__cstmutex_local_unlock(lock, snode);
+}
+
+int is_free_cstmcsvar(cstmcsvar_lock *L ){
+	if ((L) == NULL) return 1;
+	return 0;
+}
+
+/*
+   Methods for easy lock array manipulation
+   */
+
+cstmcsvar_global_params* init_cstmcsvar_array_global(uint32_t num_locks) {
+	uint32_t i;
+	cstmcsvar_global_params* the_locks =
+		(cstmcsvar_global_params*)malloc(num_locks * sizeof(cstmcsvar_global_params));
+	for (i=0;i<num_locks;i++) {
+		the_locks[i].the_lock=(cstmcsvar_lock*)malloc(sizeof(cstmcsvar_lock));
+		memset(the_locks[i].the_lock, 0, sizeof(cstmcsvar_lock));
+		INIT_LIST_HEAD(&the_locks[i].the_lock->numa_list.head);
+	}
+	MEM_BARRIER;
+	return the_locks;
+}
+
+
+cst_node_t** init_cstmcsvar_array_local(uint32_t thread_num, uint32_t num_locks) {
+	set_cpu(thread_num);
+
+	//init its qnodes
+	uint32_t i;
+	cst_node_t** the_qnodes = (cst_node_t**)malloc(num_locks * sizeof(cst_node_t*));
+	for (i=0;i<num_locks;i++) {
+		the_qnodes[i]=(cst_node_t*)malloc(sizeof(cst_node_t));
+	}
+	MEM_BARRIER;
+	return the_qnodes;
+
+}
+
+void end_cstmcsvar_array_local(cst_node_t** the_qnodes, uint32_t size) {
+	uint32_t i;
+	for (i = 0; i < size; i++) {
+		free(the_qnodes[i]);
+	}
+	free(the_qnodes);
+}
+
+void end_cstmcsvar_array_global(cstmcsvar_global_params* the_locks, uint32_t size) {
+	uint32_t i;
+	for (i = 0; i < size; i++) {
+		free(the_locks[i].the_lock);
+	}
+	free(the_locks); 
+}
+
+int init_cstmcsvar_global(cstmcsvar_global_params* the_lock) {
+	the_lock->the_lock=(cstmcsvar_lock*)malloc(sizeof(cstmcsvar_lock));
+	memset(the_lock->the_lock, 0, sizeof(cstmcsvar_lock));
+	INIT_LIST_HEAD(&the_lock->the_lock->numa_list.head);
+	MEM_BARRIER;
+	return 0;
+}
+
+
+int init_cstmcsvar_local(uint32_t thread_num, cst_node_t** the_qnode) {
+	set_cpu(thread_num);
+
+	(*the_qnode)=(cst_node_t*)malloc(sizeof(cst_node_t));
+
+	MEM_BARRIER;
+	return 0;
+
+}
+
+void end_cstmcsvar_local(cst_node_t* the_qnodes) {
+	free(the_qnodes);
+}
+
+void end_cstmcsvar_global(cstmcsvar_global_params the_locks) {
+	free(the_locks.the_lock);
+}
+
+static inline struct snode *get_snode(cstmcsvar_lock *lock, uint16_t nid)
+{
+
+	struct snode *snode, *tmp_snode;
+	uint16_t gid;
+
+     retry_snode:
+	/* short cut for serving_socket */
+	dprintf("checking whether serving socket has same nid or not\n");
+	tmp_snode = (struct snode *)lock->serving_socket;
+	if (tmp_snode && tmp_snode->nid == nid) {
+		dprintf("found the snode with nid: %d\n", nid);
+		return tmp_snode;
+	}
+
+	/* get snode */
+	gid = numa_get_gid(lock->ngid_vec, nid);
+	dprintf("current gid: %d\n", gid);
+	/* This is where the read CS begins */
+	/* check whether the list is in use or not */
+	if (numa_gid_not_empty(gid)) {
+		/* snode may be already existing, let's get it */
+		// printf("GID is still there, trying to find the snode\n");
+		snode = find_snode(lock, nid);
+	} else {
+		/* although number exists, but it is not present, adding it */
+		// printf("couldn't find the snode, going to allocate\n");
+		snode = add_snode(lock, nid, gid);
 	}
 	/*
-	 * Determine the next lock holder and pass the lock by
-	 * setting its spin field
+	 * even though gid was existing, but snode has not been created,
+	 * someone else is doing it for us
 	 */
-	if(prevHead && prevHead->wait == NODE_ACTIVE) {
-		prevHead->secTail->next = next;
-		__atomic_store_n(&prevHead->spin,
-				0x1000000000000,
-				 __ATOMIC_RELEASE);
-		printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
-		goto out;
+	if (!snode) {
+		smp_rmb();
+		goto retry_snode;
+	}
+	return snode;
+}
+
+static inline uint16_t numa_get_gid(uint64_t ngid_vec, uint16_t nid)
+{
+	uint64_t nid_mask = NUMA_NID_MASK(nid);
+	uint16_t gid_value = (ngid_vec & nid_mask) >> NUMA_GID_SHIFT(nid);
+	return gid_value;
+}
+
+static inline uint64_t  numa_set_gid(uint64_t ngid_vec,
+				     uint16_t nid, uint16_t gid)
+{
+	uint64_t nid_mask = NUMA_NID_MASK(nid);
+	uint64_t gid_mask = NUMA_GID_MASK(nid, gid);
+	return (ngid_vec & ~nid_mask) | gid_mask;
+}
+
+/**
+ * init of snode
+ */
+static inline struct snode *find_snode(cstmcsvar_lock *lock, uint16_t nid)
+{
+	struct snode *snode;
+	struct list_head *numa_entry;
+
+	/* check whether it belongs to the serving snode */
+	snode = (struct snode *)lock->serving_socket;
+	if (snode && snode->nid == nid) {
+		dprintf("found the current serving socket\n");
+		return snode;
 	}
 
-	succ = NULL;
-	if (batch < SHORT_BATCH_THRESHOLD) {
-		/* Find next short CS */
-		if (next->wait == NODE_ACTIVE) {
-			find = 1;
-			cur = next;
-			goto find_out;
+	dprintf("going to find the snode with nid: %d\n", nid);
+	numa_entry = (struct list_head *)lock->numa_list.head.next;
+	while (numa_entry) {
+		snode = list_entry(numa_entry, struct snode, numa_node);
+		dprintf("iterating over snode with nid: %d\n", snode->nid);
+
+		if (snode->nid == nid) {
+			dprintf("found the snode\n");
+			return snode;
 		}
-		secHead = next;
-		secTail = next;
-		cur = next->next;
-		while (cur) {
-			if (cur->wait == NODE_ACTIVE) {
-				if (prevHead) {
-					prevHead->secTail->next = secHead;
-				}
-				else {
-					prevHead = secHead;
-				}
-				secTail->next = NULL;
-				prevHead->secTail = secTail;
-				printf("ddddddddddd\n");
-				waking_queue(impl, secHead);
-				find = 1;
+		numa_entry = (struct list_head *)numa_entry->next;
+	}
+	dprintf("couldn't find the snode with nid: %d\n", nid);
+	return NULL;
+}
+
+static inline struct snode *add_snode(cstmcsvar_lock *lock, uint16_t nid,
+				      uint16_t gid)
+{
+	uint64_t old_ngid_vec;
+	uint64_t new_ngid_vec;
+	uint16_t new_gid;
+	struct snode *snode = NULL;
+
+	/*
+	 * XXX: I can simplify this one to have 64 bit vector to get the snode.
+	 * BUT, I will keep it if we go for the cst global memory allocator
+	 * for the kernel. If we don't then can be easily changed.
+	 */
+
+	new_gid = numa_gid_inc(gid) | 0x1;
+	do {
+		/* prepare new_ngid_vec */
+		old_ngid_vec = lock->ngid_vec;
+		dprintf("old ngid vec: %lu\n", old_ngid_vec);
+
+		new_ngid_vec = numa_set_gid(old_ngid_vec, nid, new_gid);
+		dprintf("new ngid vec: %lu\n", new_ngid_vec);
+
+		/*
+		 * do another check again since, it is possible that somehow
+		 * someone might have obtained the same gid
+		 */
+		if (old_ngid_vec == new_ngid_vec) {
+			dprintf("someone is in progress, falling back\n");
+			return find_snode(lock, nid);
+		}
+
+		/* try to atomically update ngid_vec using cas */
+		inc_atomic_count();
+		if (lock->ngid_vec == old_ngid_vec &&
+		    smp_cas(&lock->ngid_vec, old_ngid_vec, new_ngid_vec)) {
+			/* succeeded in updating ngid_vec
+			 * meaning that this thread is a winner
+			 * even if there was contention on updating ngid_vec */
+			dprintf("the ngid vector successfully updated from %lu to %lu\n",
+				old_ngid_vec, new_ngid_vec);
+			break;
+		} else  {
+			inc_casfail_count();
+			/*
+			 * this thread is a looser in updating ngid_vec
+			 * there are two cases:
+			 */
+
+			/**
+			 * 1) if snode for nid is added by other thread,
+			 *    go back to the beginning of the lock code
+			 */
+			if (numa_gid_not_empty(numa_get_gid(lock->ngid_vec, nid))) {
+				dprintf("someone already added for nid: %d\n", nid);
+				return find_snode(lock, nid);
+			}
+
+			/**
+			 * 2) otherwise snode for other nid is added,
+			 *    retry to add_snode() for this nid
+			 */
+			dprintf("failed miserably as someone else added, trying again\n");
+		}
+		dprintf("going to loop again\n");
+	} while (1);
+
+	/*
+	 * This thread succeeded in updating gid for nid.
+	 * The gid for this nid is marked as not-empty.
+	 * This thread has the responsibility of actually allocating
+	 * snode and inserting it into the numa_list. Until it is done,
+	 * all other threads for the same nid will be spinning
+	 * in the retry loop of mutex_lock().
+	 */
+	dprintf("allocating the snode with nid: %d\n", nid);
+	snode = alloc_snode(lock, (int32_t)nid);
+	snode->nid = 0;
+	smp_wmb();
+
+	/* add the new snode to the list */
+	dprintf("adding snode with nid %d to the numa list\n", nid);
+	list_add_unsafe(&snode->numa_node, &lock->numa_list.head);
+	snode->nid = nid;
+	smp_wmb();
+	return snode;
+}
+
+static inline struct snode *alloc_snode(cstmcsvar_lock *lock, int32_t nid)
+{
+	struct snode *snode;
+	dprintf("malloc snode with nid: %d\n", nid);
+	snode = malloc_at_numa_node(sizeof(*snode), nid);
+	snode->qtail = NULL;
+	snode->qnext = NULL;
+	snode->num_proc = 0;
+
+	snode->status = STATE_PARKED;
+	snode->gnext = NULL;
+	snode->numa_node.next = NULL;
+	INIT_LIST_HEAD(&snode->wait_list);
+	spinlock_init(&snode->wait_lock);
+	snode->my_lock = lock;
+	return snode;
+}
+
+/**
+ * allocation / deallocation of snode
+ */
+static inline void *malloc_at_numa_node(size_t size, int32_t nid)
+{
+	return malloc(size);
+}
+
+/* state stuff */
+
+static inline int update_qnode_state_release(struct qnode *qnode,
+					     uint64_t state)
+{
+	uint64_t new_status = (PARKING_STATE_MASK(UNPARKED)) | state;
+
+	return ((qnode->status == UNPARKED_WAITER_STATE) &&
+		smp_cas(&qnode->status, UNPARKED_WAITER_STATE, new_status));
+}
+
+static inline int update_qnode_state_park(struct qnode *qnode)
+{
+	return ((qnode->status == UNPARKED_WAITER_STATE) &&
+		 smp_cas(&qnode->status, UNPARKED_WAITER_STATE,
+			 PARKED_WAITER_STATE));
+}
+
+static inline void wait_for_unparking(struct qnode *qnode)
+{
+	dprintf("qnode parking state: %d\n", PARKING_STATE(qnode->status));
+	for (;;) { /* test for userspace */
+		if (PARKING_STATE(qnode->status) == UNPARKED)
+			break;
+	}
+}
+
+static inline void update_qnode_state_park_to_unpark(struct qnode *qnode,
+					       uint64_t count)
+{
+	dprintf("%s: update qnode (%d) state to unparked\n", __func__,
+	       qnode->cid);
+	if (!smp_cas(&qnode->status, PARKED_WAITER_STATE,
+		     ((PARKING_STATE_MASK(UNPARKED)) | count))) {
+		dprintf("qnode: %d, status: %lu\n", qnode->cid,
+		       qnode->status);
+		dprintf("count: %lu\n", count);
+		assert(0);
+	}
+}
+
+static inline void wake_up_all_waiters_in_snode(struct snode *snode)
+{
+	// printf("asd0 %d\n", snode->wait_lock);
+	spin_lock(&snode->wait_lock);
+	if (!list_empty(&snode->wait_list)) {
+		dprintf("%s: wakingup everyone\n", __func__);
+		struct qnode *pos, *tmp;
+		list_for_each_entry_safe(pos, tmp,
+					 &snode->wait_list, wait_node) {
+			dprintf("%s: waking up parked waiter: %d\n", __func__,
+				pos->cid);
+			if (pos->in_list) {
+				pos->in_list = false;
+				list_del(&pos->wait_node);
+			}
+			update_qnode_state_park_to_unpark(pos, REQUEUE);
+		}
+		/* ??? wake up all / do we really need to wake up all ??? */
+		dprintf("%s: wakingup everyone .... done\n", __func__);
+	}
+	spin_unlock(&snode->wait_lock);
+}
+
+static inline int release_any_active_waiter(struct snode *snode,
+					    struct qnode *qnode, uint64_t count)
+{
+	struct qnode *tmp;
+
+	tmp = qnode;
+#if 0
+	spin_lock(&snode->wait_lock);
+	dprintf("=== start ===\n");
+	for (;;) {
+		if (update_qnode_state_release(tmp, count)) {
+			dprintf("%d got the lock\n", tmp->cid);
+			dprintf("=== end ===\n");
+			spin_unlock(&snode->wait_lock);
+			return true;
+		}
+		dprintf("couldn't get the lock: %d\n", tmp->cid);
+		if (!tmp->in_list) {
+			assert(0);
+			dprintf("adding qnode: %d\n", tmp->cid);
+			list_add_tail(&tmp->wait_node, &snode->wait_list);
+			tmp->in_list = true;
+		}
+		smp_rmb();
+		if (!tmp->next) {
+			if (snode->qtail != tmp) {
+				while (!tmp->next)
+					smp_rmb();
+			} else {
 				break;
 			}
-			secTail = cur;
-			cur = cur->next;
+		} else
+			tmp = (struct qnode *)tmp->next;
+	}
+	dprintf("=== end ===\n");
+	spin_unlock(&snode->wait_lock);
+#endif
+	for (;;) {
+		if (update_qnode_state_release(tmp, count)) {
+			return true;
 		}
- find_out:
-		if (find) {
-			spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
-			/* Important: spin should not be 0 */
-			/* Release barrier */
-			__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
-			printf("cur->tid %d should lock %d %lu\n", cur->tid, cur->wait, cur->spin);
-			goto out;
-		} 
+		if (!tmp->next) {
+			if (snode->qtail != tmp) {
+				while (!tmp->next)
+					smp_rmb();
+			} else
+				break;
+		} else
+			tmp = (struct qnode *)tmp->next;
 	}
-
-	/* Not find anything or batch */
-	if (prevHead) {;
-		prevHead->secTail->next = me->next;
-		spin = 0x1000000000000;	/* batch = 1 */
-		/* Release barrier */
-		waking_queue(impl, prevHead);
-		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
-		printf("prevHead->tid %d should lock %d\n", prevHead->tid, prevHead->wait);
-		
-	} else {
-		succ = me->next;
-		spin = 0x1000000000000;	/* batch = 1 */
-		/* Release barrier after */
-		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
-		printf("succ->tid %d should lock %d\n", succ->tid, succ->wait);
-	}
- out:
-	// printf("tid %d unlock out\n", me->tid);
-	nested_level--;		/* Important! reduce nested level *after* release the lock */
+	return false;
 }
 
-/* Using the unmodified MCS lock as the default underlying lock. */
-static int __cst_lock_ux(cst_mutex_t * impl, cst_node_t * me, uint64_t timestamp)
+static inline int park_qnode(cstmcsvar_lock *lock, struct snode *snode,
+			     struct qnode *qnode)
 {
-	cst_node_t *tail;
-	int count = 0;
-	me->next = NULL;
-	me->spin = 0;
-	me->tid = cur_thread_id;
-	me->wait = NODE_ACTIVE;
-
-	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
-	if (tail) {
-		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-		while (me->spin == 0) {
-			CPU_PAUSE();
-			// sched_yield();
-            if(count++ == 1000 && rdtscp() - timestamp > 1000) {
-				count = 0;
-				me->wait = NODE_SLEEP;
-				printf("tid %d is here %d sleep %lu \n", me->tid, me->wait, me->spin);
-				waiting_policy_sleep(&me->wait);	
-				printf("tid %d is here %d sleep %lu out \n", me->tid, me->wait, me->spin);
-				timestamp = rdtscp();
-			}
-		}		
-	} else {
-		/* set batch to 0 */
-		me->spin = 0;
-	}
-	MEMORY_BARRIER();
-	printf("tid %d lock succ %d\n", me->tid, me->wait);
-	return 0;
-}
-
-/* not-ux-thread reorder if queue not empty */
-static inline int __cst_lock_nonux(cst_mutex_t * impl, cst_node_t * me)
-{
-	uint64_t reorder_window_ddl;
-	uint32_t cnt = 0;
-	uint64_t current_ns;
-	uint64_t sleep_time = 10000;
-	if (cst_mutex_trylock(impl, me) == 0)
-            return 0;
-	/* Someone is holding the lock */
-	reorder_window_ddl = get_current_ns() + NO_UX_MAX_WAIT_TIME;
-	while (current_ns = get_current_ns() < reorder_window_ddl) {
-        sleep_time = sleep_time < reorder_window_ddl - current_ns ?
-            sleep_time : reorder_window_ddl - current_ns;
-        nanosleep((const struct timespec[]){{0, sleep_time}}, NULL);
-        if (cst_mutex_trylock(impl, me) == 0)
-            return 0;
-        sleep_time = sleep_time << 5;
-	}
- out:
-	return __cst_lock_ux(impl, me, rdtscp());
-}
-
-/* Entry Point: length  */
-static int __cst_mutex_lock(cst_mutex_t * impl, cst_node_t * me)
-{
-	int ret;
-	if (uxthread || nested_level > 1)
-		return __cst_lock_ux(impl, me, rdtscp());
-	else
-		return __cst_lock_nonux(impl, me);
-}
-
-/* lock function with perdict critical (Do not support litl, use llvm instead) */
-int cst_mutex_lock_cri(cst_mutex_t * impl, cst_node_t * me, int loc)
-{
-	nested_level++;		/* Per-thread nest level cnter, add before hold the lock */
-
-	int ret = __cst_mutex_lock(impl, me);
-	/* Critical Section Start */
-	tt_start[loc] = PAPI_get_real_cyc();
-	if (cur_loc >= 0)
-		push_loc(cur_loc);
-	cur_loc = loc;		/* No need to read stack in critical path */
-	return ret;
-}
-
-/* lock function orignal*/
-int cst_mutex_lock(cst_mutex_t * impl, cst_node_t * me)
-{
-	return cst_mutex_lock_cri(impl, me, 0);	/* Default loc 0 */
-}
-
-int cst_mutex_trylock(cst_mutex_t * impl, cst_node_t * me)
-{
-
-	if (!__cst_mutex_trylock(impl, me)) {
-		nested_level++;	/* Per-thread nest level cnter */
-#if COND_VAR
-		REAL(pthread_mutex_lock)
-		    (&impl->posix_lock);
+	if (!spin_trylock(&snode->wait_lock)) {
+		if (!update_qnode_state_park(qnode)) {
+			dprintf("failed to change to park state\n");
+			goto unlock_out;
+		}
+		dprintf("parked qnode: %d\n", qnode->cid);
+		assert(qnode->in_list == 0);
+		list_add_tail(&qnode->wait_node, &snode->wait_list);
+		qnode->in_list = true;
+		spin_unlock(&snode->wait_lock);
+		wait_for_unparking(qnode);
+		dprintf("scheduled in qnode: %d\n", qnode->cid);
+#ifdef PARKING
+		return QNODE_REQUEUE;
 #endif
-		return 0;
 	}
-	return -EBUSY;
+     out:
+	return QNODE_UNPARKED;
+     unlock_out:
+	spin_unlock(&snode->wait_lock);
+	return QNODE_UNPARKED;
 }
 
-/* unlock function orignal*/
-void cst_mutex_unlock(cst_mutex_t * impl, cst_node_t * me)
-{
-	uint64_t duration, end_ts;
-	/* Record CS len */
-	end_ts = PAPI_get_real_cyc();
-	__cst_mutex_unlock(impl, me);
-	duration = end_ts - tt_start[cur_loc];
-	/* update critical_len */
-	if (critical_len[cur_loc] == 0)
-		critical_len[cur_loc] = duration;
-	else if (duration < MAX_CS_LEN)	/* Not too long to record */
-		critical_len[cur_loc] =
-		    ((critical_len[cur_loc] * 7) + duration) >> 3;
-	cur_loc = pop_loc();
-	// // // // // printf("me->tid %d unlock\n", me->tid);
-}
-
-int cst_mutex_destroy(cst_mutex_t * lock)
-{
+cst_mutex_t *cst_mutex_create(const pthread_mutexattr_t *attr) {
+	cst_mutex_t *impl = (cst_mutex_t *)alloc_cache_align(sizeof(cst_mutex_t));
 #if COND_VAR
-	REAL(pthread_mutex_destroy)
-	    (&lock->posix_lock);
+    REAL(pthread_mutex_init)(&impl->posix_lock, /*&errattr */ attr);
+    DEBUG("Mutex init lock=%p posix_lock=%p\n", impl, &impl->posix_lock);
 #endif
-	free(lock);
-	lock = NULL;
 
-	return 0;
+    return impl;
+}
+int cst_cond_init(cst_cond_t *cond,
+                         const pthread_condattr_t *attr) {
+							return 0;
+						 }
+					
+int cst_cond_timedwait(cst_cond_t *cond, cst_mutex_t *lock,
+                              cst_node_t *me, const struct timespec *ts) {
+								return 0;
+							  }
+
+int cst_cond_wait(cst_cond_t *cond, cst_mutex_t *lock, cst_node_t *me) {
+    return cst_cond_timedwait(cond, lock, me, 0);
 }
 
-int cst_cond_init(cst_cond_t * cond, const pthread_condattr_t * attr)
-{
-	return 0;
+int cst_cond_signal(cst_cond_t *cond) {
+#if COND_VAR
+    return REAL(pthread_cond_signal)(cond);
+#else
+    fprintf(stderr, "Error cond_var not supported.");
+    assert(0);
+#endif
 }
 
-int cst_cond_timedwait(cst_cond_t * cond, cst_mutex_t * lock,
-		       cst_node_t * me, const struct timespec *ts)
-{
-	return 0;
+int cst_cond_broadcast(cst_cond_t *cond) {
+#if COND_VAR
+    DEBUG("[%d] Broadcast cond=%p\n", cur_thread_id, cond);
+    return REAL(pthread_cond_broadcast)(cond);
+#else
+    fprintf(stderr, "Error cond_var not supported.");
+    assert(0);
+#endif
 }
 
-int cst_cond_wait(cst_cond_t * cond, cst_mutex_t * lock, cst_node_t * me)
-{
-	return cst_cond_timedwait(cond, lock, me, 0);
+int cst_cond_destroy(cst_cond_t *cond) {
+#if COND_VAR
+    return REAL(pthread_cond_destroy)(cond);
+#else
+    fprintf(stderr, "Error cond_var not supported.");
+    assert(0);
+#endif
 }
 
-int cst_cond_signal(cst_cond_t * cond)
-{
-	return 0;
+void cst_thread_start(void) {
 }
 
-void cst_thread_start(void)
-{
+void cst_thread_exit(void) {
 }
 
-void cst_thread_exit(void)
-{
+void cst_application_init(void) {
 }
 
-void cst_application_init(void)
-{
+void cst_application_exit(void) {
 }
 
-void cst_application_exit(void)
-{
+void cst_init_context(cst_mutex_t *impl,
+                             cst_node_t *context, int number) {
 }
-
-int cst_cond_broadcast(cst_cond_t * cond)
-{
-	return 0;
-}
-
-int cst_cond_destroy(cst_cond_t * cond)
-{
-	return 0;
-}
-
-void cst_init_context(lock_mutex_t * UNUSED(impl),
-		      lock_context_t * UNUSED(context), int UNUSED(number))
-{
-}
-
-/* New interfaces in Libcst */
-/* set a thread is uxthread or not */
-void set_ux(int is_ux)
-{
-	uxthread = is_ux;
-}
-

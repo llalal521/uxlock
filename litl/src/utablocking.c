@@ -533,3 +533,4 @@ void set_ux(int is_ux)
 {
 	uxthread = is_ux;
 }
+

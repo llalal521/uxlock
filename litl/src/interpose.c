@@ -571,64 +571,64 @@ int pthread_cond_broadcast(pthread_cond_t * cond)
 // __asm__(".symver __pthread_cond_broadcast,pthread_cond_broadcast@@"
 // GLIBC_2_3_2);
 
-// Spinlocks
-int pthread_spin_init(pthread_spinlock_t * spin, int pshared)
-{
-	DEBUG_PTHREAD("[p] pthread_spin_init\n");
-	if (init_spinlock != 2) {
-		REAL(interpose_init) ();
-	}
-#if !NO_INDIRECTION
-	ht_lock_create((void *)spin, NULL);
-	return 0;
-#else
-	return REAL(pthread_spin_init) (spin, pshared);
-#endif
-}
+// // Spinlocks
+// int pthread_spin_init(pthread_spinlock_t * spin, int pshared)
+// {
+// 	DEBUG_PTHREAD("[p] pthread_spin_init\n");
+// 	if (init_spinlock != 2) {
+// 		REAL(interpose_init) ();
+// 	}
+// #if !NO_INDIRECTION
+// 	ht_lock_create((void *)spin, NULL);
+// 	return 0;
+// #else
+// 	return REAL(pthread_spin_init) (spin, pshared);
+// #endif
+// }
 
-int pthread_spin_destroy(pthread_spinlock_t * spin)
-{
-	DEBUG_PTHREAD("[p] pthread_spin_destroy\n");
-#if !NO_INDIRECTION
-	return 0;
-#else
-	assert(0 && "spinlock not supported without indirection");
-#endif
-}
+// int pthread_spin_destroy(pthread_spinlock_t * spin)
+// {
+// 	DEBUG_PTHREAD("[p] pthread_spin_destroy\n");
+// #if !NO_INDIRECTION
+// 	return 0;
+// #else
+// 	assert(0 && "spinlock not supported without indirection");
+// #endif
+// }
 
-int pthread_spin_lock(pthread_spinlock_t * spin)
-{
-	DEBUG_PTHREAD("[p] pthread_spin_lock\n");
-#if !NO_INDIRECTION
-	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
-	return lock_mutex_lock(impl->lock_lock, get_node(impl));
-#else
-	assert(0 && "spinlock not supported without indirection");
-#endif
-}
+// int pthread_spin_lock(pthread_spinlock_t * spin)
+// {
+// 	DEBUG_PTHREAD("[p] pthread_spin_lock\n");
+// #if !NO_INDIRECTION
+// 	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
+// 	return lock_mutex_lock(impl->lock_lock, get_node(impl));
+// #else
+// 	assert(0 && "spinlock not supported without indirection");
+// #endif
+// }
 
-int pthread_spin_trylock(pthread_spinlock_t * spin)
-{
-	DEBUG_PTHREAD("[p] pthread_spin_trylock\n");
-#if !NO_INDIRECTION
-	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
-	return lock_mutex_trylock(impl->lock_lock, get_node(impl));
-#else
-	assert(0 && "spinlock not supported without indirection");
-#endif
-}
+// int pthread_spin_trylock(pthread_spinlock_t * spin)
+// {
+// 	DEBUG_PTHREAD("[p] pthread_spin_trylock\n");
+// #if !NO_INDIRECTION
+// 	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
+// 	return lock_mutex_trylock(impl->lock_lock, get_node(impl));
+// #else
+// 	assert(0 && "spinlock not supported without indirection");
+// #endif
+// }
 
-int pthread_spin_unlock(pthread_spinlock_t * spin)
-{
-	DEBUG_PTHREAD("[p] pthread_spin_unlock\n");
-#if !NO_INDIRECTION
-	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
-	lock_mutex_unlock(impl->lock_lock, get_node(impl));
-	return 0;
-#else
-	assert(0 && "spinlock not supported without indirection");
-#endif
-}
+// int pthread_spin_unlock(pthread_spinlock_t * spin)
+// {
+// 	DEBUG_PTHREAD("[p] pthread_spin_unlock\n");
+// #if !NO_INDIRECTION
+// 	lock_transparent_mutex_t *impl = ht_lock_get((void *)spin);
+// 	lock_mutex_unlock(impl->lock_lock, get_node(impl));
+// 	return 0;
+// #else
+// 	assert(0 && "spinlock not supported without indirection");
+// #endif
+// }
 
 #if defined(RWTAS)
 
