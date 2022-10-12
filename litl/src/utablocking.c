@@ -408,14 +408,14 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 	me->tid = cur_thread_id;
 	me->status = S_ACTIVE;
 
-	printf("tid %d go lock\n", gettid());
+	// printf("tid %d go lock\n", gettid());
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
 		while (me->spin == 0) {
 			CPU_PAUSE();
 			// // // printf("tid %d is here %d\n", me->tid, me->wait);
-			if(rdtscp() - timestamp > 1000 + random) {
+			if(rdtscp() - timestamp > 1000000 + random) {
 				// me->wait = 0;
 				// // // printf("tid %d is sleep status %d\n", me->tid, me->wait);
 				expected = S_ACTIVE;
@@ -423,9 +423,9 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 						__ATOMIC_ACQ_REL,
 					   __ATOMIC_ACQ_REL)) {
 						// me->wait = 0;
-						 printf("tid %d is sleep wait status %d\n", me->tid, me->status);
+						//  printf("tid %d is sleep wait status %d\n", me->tid, me->status);
 						park_node(&me->status, 0);
-						 printf("tid %d is waked wait status %d\n", me->tid, me->status);
+						//  printf("tid %d is waked wait status %d\n", me->tid, me->status);
 						timestamp = rdtscp();
 					}
 				
@@ -438,7 +438,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl, utablocking_node_t 
 		me->spin = 0;
 	}
 	MEMORY_BARRIER();
-	printf("tid %d lock succ %d\n", me->tid, me->status);
+	// printf("tid %d lock succ %d\n", me->tid, me->status);
 	// // // // // // // printf("cur_thread_id %d lock succ\n", cur_thread_id);
 	return 0;
 }
@@ -470,11 +470,8 @@ static inline int __utablocking_lock_nonux(utablocking_mutex_t * impl, utablocki
 static int __utablocking_mutex_lock(utablocking_mutex_t * impl, utablocking_node_t * me)
 {
 	int ret;
+	__utablocking_lock_ux(impl, me);
 	// me->status = NODE_ACTIVE;
-	if (uxthread || nested_level > 1)
-		return __utablocking_lock_ux(impl, me);
-	else
-		return __utablocking_lock_nonux(impl, me);
 }
 
 /* lock function with perdict critical (Do not support litl, use llvm instead) */
