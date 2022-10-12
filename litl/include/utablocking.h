@@ -83,3 +83,4 @@ void set_ux(int is_ux); /* utablocking interface */
 #define lock_mutex_lock_cri utablocking_mutex_lock_cri
 #define lock_init_context utablocking_init_context
 #endif				// __utablocking_H__
+

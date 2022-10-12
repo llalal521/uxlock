@@ -71,6 +71,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <linux/futex.h>
 #include <fcntl.h>
 #ifndef __sparc__
 #include <numa.h>

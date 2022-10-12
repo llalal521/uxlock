@@ -196,7 +196,6 @@ static void __uta_mutex_unlock(uta_mutex_t * impl, uta_node_t * me)
 				// printf("decrease threshold %d\n", threshold);
 			}
 #endif
-			batch = 0;
 			spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
 			/* Important: spin should not be 0 */
 			/* Release barrier */
