@@ -260,7 +260,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 			CPU_PAUSE();
 	}
 	// // printf("tid %d unlock 2\n", me->tid);
-	flag = 1;
 	succ = NULL;
 	if (batch < SHORT_BATCH_THRESHOLD) {
 		sta_exp = 2;
@@ -300,7 +299,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
  find_out:
 		if (find) {
 			// printf("tid %d unlock 3\n", me->tid);
-			if (prevHead && flag) {
+			if (prevHead) {
 				if (cur->next && cur->next->next) {
 					cur->next->status = S_PARKED;
 					tmp = cur->next;
@@ -310,8 +309,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 					prevHead->secTail = tmp;
 					impl->prevCnt++;
 				}
-			}
-			if (prevHead) {
 				if (prevHead->next) {
 					prevHead->next->secTail =
 					    prevHead->secTail;
