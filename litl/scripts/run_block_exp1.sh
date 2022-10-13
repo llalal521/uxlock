@@ -5,7 +5,7 @@ LITL_DIR=$LOCAL_DIR/..
 LITLLIB_DIR=$LITL_DIR/lib
 export LD_LIBRARY_PATH=$LITLLIB_DIR:$LD_LIBRARY_PATH
 
-delay=1
+delay=2
 core=100
 time=2
 LONG_CRI=512
@@ -13,11 +13,11 @@ SHORT_CRI=512
 uxthread=20
 
 # echo "pthread_lock "
-# for i in  128
+# for i in  8
 # do
 #         $LITL_DIR/libpthreadinterpose_original.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0
-#         sleep 2
+#         sleep $time
 # done
 
 # echo "mutexee "
@@ -29,27 +29,27 @@ uxthread=20
 # done
 
 # echo "MCS "
-# for i in  128 
+# for i in  8 
 # do
 #         $LITL_DIR/libmcs_spin_then_park.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0
-#         sleep 2
+#         sleep $time
 # done
 
 # echo "MCSWAKE "
-# for i in  128
+# for i in  8
 # do
 #         $LITL_DIR/libmcswake_spin_then_park.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0
-#         sleep 2
+#         sleep $time
 # done
 
 # echo "MCSSTEAL "
-# for i in  128 
+# for i in  8 
 # do
 #         $LITL_DIR/libmcssteal_spin_then_park.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0
-#         sleep 2
+#         sleep $time
 # done
 
 # echo "MALTHUSIAN "
@@ -70,11 +70,11 @@ uxthread=20
 # done
 
 echo "utablocking "
-for i in 128
+for i in 8
 do
         $LITL_DIR/libutablocking_spin_then_park.sh $LITL_DIR/bin/bench_block -t 20  -T $time -S $core -d $i*$delay -s $i > result
         $LOCAL_DIR/measure.sh ./result 20 20 0
-        sleep 2
+        sleep 5
 done
 
 # echo "cst "

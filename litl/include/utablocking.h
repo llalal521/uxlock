@@ -32,7 +32,7 @@ typedef struct utablocking_mutex {
 	struct utablocking_node *volatile tail;
 	char __pad[pad_to_cache_line(sizeof(struct utablocking_node*))];
 	 
-	volatile int64_t threshold;
+	volatile int64_t prevCnt;
 	char __pad1[pad_to_cache_line(sizeof(int64_t))];
 } utablocking_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
