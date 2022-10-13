@@ -70,7 +70,7 @@ uxthread=20
 # done
 
 echo "utablocking "
-for i in 8
+for i in 128
 do
         $LITL_DIR/libutablocking_spin_then_park.sh $LITL_DIR/bin/bench_block -t 20  -T $time -S $core -d $i*$delay -s $i > result
         $LOCAL_DIR/measure.sh ./result 20 20 0
