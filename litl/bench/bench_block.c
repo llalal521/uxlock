@@ -199,7 +199,8 @@ void *thread_routine_transparent(void *arg)
 			/* Record Frequency */
 			request_normal(tid);
 			duration = tt_endp - tt_startp;
-			record_latency[record_cnt % LATENCY_RECORD] = duration;
+			record_latency[record_cnt] = duration;
+			// printf("duration %d record_cnt %d tid %d record_all %d %d\n", duration, record_cnt, tid, record_all[tid][record_cnt], record_all[tid][0]);
 			record_cnt++;
 		} else {
 			request_normal(tid);

@@ -103,7 +103,7 @@ void *test_mutex_routine(void *arg)
 #else
     core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
 #endif
-
+        printf("tid here %d\n", tid);
         cpu_set_t mask;
         CPU_ZERO(&mask);
         CPU_SET(core_id, &mask);
@@ -111,19 +111,9 @@ void *test_mutex_routine(void *arg)
         sched_yield();
 
         for (int i = 0; i < TST_NUM; i++) {
-                if (core_id % 2 == 0) {
-                        pthread_mutex_lock(&global_lock_1);
                         pthread_mutex_lock(&global_lock_2);
-                        global_cnt_a = global_cnt_b + 1;
-                        global_cnt_b = global_cnt_a;
+                        global_cnt_a++;
                         pthread_mutex_unlock(&global_lock_2);
-                        pthread_mutex_unlock(&global_lock_1);
-                } else {
-                        pthread_mutex_lock(&global_lock_2);
-                        global_cnt_a = global_cnt_b + 1;
-                        global_cnt_b = global_cnt_a;
-                        pthread_mutex_unlock(&global_lock_2);
-                }
         }
         return NULL;
 }
@@ -168,13 +158,15 @@ int main(void)
 {
         pthread_t tid[THD_NUM];
         int i = 0;
-
+         printf("sss1\n");
         pthread_mutex_init(&global_lock_1, NULL);
         pthread_mutex_init(&global_lock_2, NULL);
         for (i = 0; i < THD_NUM; i ++)
                 pthread_create(&tid[i], NULL, test_mutex_routine, (void *)(long)i);
+         printf("sss2 %d\n", THD_NUM);
         for (i = 0; i < THD_NUM; i ++)
                 pthread_join(tid[i], NULL);
+        printf("sss\n");
 
         if (global_cnt_a != THD_NUM * TST_NUM) {
                 printf("Mutex FAILED!\n");

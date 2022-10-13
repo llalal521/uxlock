@@ -21,14 +21,11 @@ typedef struct utablocking_node {
 	 int status;
 	char __pad3[pad_to_cache_line(sizeof(int))];
 
-	 int tid;
-	char __pad4[pad_to_cache_line(sizeof(int))];
-
-	 int cri_len;
+	int wait;
 	char __pad5[pad_to_cache_line(sizeof(int))];
 
-	volatile int wait;
-	char __pad6[pad_to_cache_line(sizeof(int))];
+	 int tid;
+	char __pad4[pad_to_cache_line(sizeof(int))];
 } utablocking_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utablocking_mutex {
