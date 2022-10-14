@@ -48,7 +48,6 @@ __thread int loc_stack[STACK_SIZE];
 unsigned long debug_cnt_0 = 0;
 unsigned long debug_cnt_1 = 0;
 
-
 static inline uint32_t xor_random()
 {
 	static __thread uint32_t rv = 0;
@@ -76,9 +75,10 @@ static uint64_t __always_inline rdtscp(void)
 }
 
 static inline int sys_futex(int *uaddr, int op, int val,
-                            const struct timespec *timeout, int *uaddr2,
-                            int val3) {
-    return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
+			    const struct timespec *timeout, int *uaddr2,
+			    int val3)
+{
+	return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
 }
 
 static inline void park_node(volatile int *var, int target)
@@ -130,7 +130,6 @@ utablocking_mutex_t *utablocking_mutex_create(const pthread_mutexattr_t * attr)
 	utablocking_mutex_t *impl = (utablocking_mutex_t *)
 	    utablocking_alloc_cache_align(sizeof(utablocking_mutex_t));
 	impl->tail = 0;
-	impl->prevCnt = 0;
 	return impl;
 }
 
@@ -177,7 +176,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 				goto out;
 			}
 		} else {
-			debug_cnt_0 ++;
 			expected = me;
 			if (__atomic_compare_exchange_n
 			    (&impl->tail, &expected, prevHead->secTail, 0,
@@ -187,7 +185,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 				__atomic_store_n(&prevHead->spin,
 						 0x1000000000000,
 						 __ATOMIC_RELEASE);
-
 				goto out;
 			}
 		}
@@ -233,17 +230,13 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 		/* Important: spin should not be 0 */
 		/* Release barrier */
 		__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
-		debug_cnt_1 ++;
 		goto out;
 	}
-
-	debug_cnt_0 ++;
 
 	/* Not find anything or batch */
 	if (prevHead) {
 		/* Secondary queue */
 		prevHead->secTail->next = me->next;
-		impl->prevCnt = 0;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier */
 		wake_node(&prevHead->status);
@@ -254,7 +247,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 		succ = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier after */
-		impl->prevCnt = 0;
 		wake_node(&succ->status);
 		if (succ->next)
 			waking_queue(impl, succ->next);
@@ -262,9 +254,11 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 	}
  out:
 	nested_level--;		/* Important! reduce nested level *after* release the lock */
+	me->actcnt++;		/* Out of Critical Path */
 }
 
-#define DEFAULT_WAIT_TIME	1000000
+#define DEFAULT_ACT_DURATION_TIME	1000000
+#define DEFUALT_ACT_REDUCATION		100
 
 /* Using the unmodified MCS lock as the default underlying lock. */
 static int __utablocking_lock_ux(utablocking_mutex_t * impl,
@@ -272,31 +266,33 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 {
 	utablocking_node_t *tail;
 	uint64_t timestamp = rdtscp();
-	int random = xor_random() % DEFAULT_WAIT_TIME;
+	uint64_t random = xor_random() % DEFAULT_ACT_DURATION_TIME;
+	uint64_t act_duration;
 	int expected;
- reque:
+
 	me->next = NULL;
 	me->spin = 0;
 	me->status = S_ACTIVE;
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
+		act_duration = DEFAULT_ACT_DURATION_TIME + random - me->actcnt * DEFUALT_ACT_REDUCATION;
 		while (me->spin == 0) {
 			CPU_PAUSE();
 			if (me->status != S_READY
-			    && rdtscp() - timestamp > DEFAULT_WAIT_TIME + random) {
+			    && rdtscp() - timestamp >
+			    DEFAULT_ACT_DURATION_TIME + random) {
 				expected = S_ACTIVE;
 				if (__atomic_compare_exchange_n
 				    (&me->status, &expected, S_PARKED, 0,
 				     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+					/* Add to the secondary queue */
+					me->actcnt = 0;
 					park_node(&me->status, S_PARKED);
 					timestamp = rdtscp();
 				}
 			}
 		}
-	} else {
-		/* set batch to 0 */
-		me->spin = 0;
 	}
 	MEMORY_BARRIER();
 	return 0;
@@ -401,10 +397,10 @@ int utablocking_cond_destroy(utablocking_cond_t * cond)
 	return 0;
 }
 
-void utablocking_init_context(lock_mutex_t * UNUSED(impl),
-			      lock_context_t * UNUSED(context),
-			      int UNUSED(number))
+void utablocking_init_context(lock_mutex_t * impl,
+			      lock_context_t * context, int UNUSED(number))
 {
+	context->actcnt = 0;
 }
 
 /* New interfaces in Libutablocking */

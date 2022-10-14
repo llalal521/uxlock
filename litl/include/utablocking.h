@@ -11,21 +11,19 @@ typedef struct utablocking_node {
 	char __pad0[pad_to_cache_line(sizeof(struct utablocking_node *))];
 
 	struct utablocking_node *volatile secTail;
-	char __pad2[pad_to_cache_line(sizeof(struct utablocking_node *))];
+	char __pad1[pad_to_cache_line(sizeof(struct utablocking_node *))];
 
 	int status;
-	char __pad3[pad_to_cache_line(sizeof(int))];
+	int actcnt; /* Cnt of continuesly being an active waiter */
+	char __pad2[pad_to_cache_line(sizeof(int) * 2)];
 
 	volatile uint64_t spin;
-	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
+	char __pad3[pad_to_cache_line(sizeof(uint64_t))];
 } utablocking_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utablocking_mutex {
 	struct utablocking_node *volatile tail;
 	char __pad[pad_to_cache_line(sizeof(struct utablocking_node*))];
-	 
-	volatile int64_t prevCnt;
-	char __pad1[pad_to_cache_line(sizeof(int64_t))];
 } utablocking_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef utablocking_mutex_t lock_mutex_t;
