@@ -81,8 +81,6 @@ tail_line=$[$ux_tot_line*100/100]
 sed -n "$p50_line p" uxtail_sorted | tr '\n' '\t' # p50
 awk '{sum += $1} END {printf "%3.3f\t",sum/NR}' uxtail_tot | tr '\n' '\t'  # avg
 sed -n "$p99_line p" uxtail_sorted | tr '\n' '\t' # p99
-sed -n "$p999_line p" uxtail_sorted | tr '\n' '\t' # p999
-sed -n "$tail_line p" uxtail_sorted | tr '\n' '\t' # p999
 sed -n "2 p" $FILE
 
 rm -f tail_*

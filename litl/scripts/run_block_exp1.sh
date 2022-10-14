@@ -12,13 +12,13 @@ LONG_CRI=512
 SHORT_CRI=512
 uxthread=20
 
-# echo "pthread_lock "
-# for i in  8
-# do
-#         $LITL_DIR/libpthreadinterpose_original.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
-#         $LOCAL_DIR/measure.sh ./result 20 20 0
-#         sleep $time
-# done
+echo "pthread_lock "
+for i in  8
+do
+        $LITL_DIR/libpthreadinterpose_original.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
+        $LOCAL_DIR/measure.sh ./result 20 20 0
+        sleep $time
+done
 
 # echo "mutexee "
 # for i in  128
@@ -29,7 +29,7 @@ uxthread=20
 # done
 
 # echo "MCS "
-# for i in  8 
+# for i in  8
 # do
 #         $LITL_DIR/libmcs_spin_then_park.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0
@@ -45,7 +45,7 @@ uxthread=20
 # done
 
 # echo "MCSSTEAL "
-# for i in  8 
+# for i in  8
 # do
 #         $LITL_DIR/libmcssteal_spin_then_park.sh  $LITL_DIR/bin/bench_block -t 20 -T $time -S $core -d $i*$delay -s $i  > result
 #         $LOCAL_DIR/measure.sh ./result 20 20 0

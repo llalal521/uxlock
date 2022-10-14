@@ -4,28 +4,20 @@
 #include "padding.h"
 #define LOCK_ALGORITHM "UTABLOCKING"
 #define NEED_CONTEXT 1
-#define SUPPORT_WAITING 1
-
-
+#define SUPPORT_WAITING 0
 
 typedef struct utablocking_node {
 	struct utablocking_node *volatile next;
 	char __pad0[pad_to_cache_line(sizeof(struct utablocking_node *))];
 
-	volatile uint64_t spin;
-	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
-
 	struct utablocking_node *volatile secTail;
 	char __pad2[pad_to_cache_line(sizeof(struct utablocking_node *))];
 
-	 int status;
+	int status;
 	char __pad3[pad_to_cache_line(sizeof(int))];
 
-	int wait;
-	char __pad5[pad_to_cache_line(sizeof(int))];
-
-	 int tid;
-	char __pad4[pad_to_cache_line(sizeof(int))];
+	volatile uint64_t spin;
+	char __pad1[pad_to_cache_line(sizeof(uint64_t))];
 } utablocking_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utablocking_mutex {

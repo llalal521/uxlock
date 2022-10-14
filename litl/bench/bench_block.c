@@ -136,7 +136,7 @@ void delay_nops(int time)
 	}
 }
 
-int short_thread_number = 4;
+int short_thread_number = THD_NUM;
 
 void request_normal(int tid)
 {

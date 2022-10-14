@@ -23,7 +23,7 @@
 #endif
 
 #define TST_NUM 100000
-#define THD_NUM 10
+#define THD_NUM 40
 #define RECORD_FREQ 1
 
 #define NOP0 __asm__ __volatile__("\nnop\n");
@@ -85,112 +85,95 @@ int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 #include "libuta.h"
 #endif
 
-
 void *test_mutex_routine(void *arg)
 {
-        int tid = (int)(long)arg;
-        int core_id;
+	int tid = (int)(long)arg;
+	int core_id;
+	core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET(core_id, &mask);
+	sched_setaffinity(0, sizeof(mask), &mask);
+	sched_yield();
 
-#ifdef UX_PRIORITY
-	if (tid < 10) {
-        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-        set_ux(1);
-    }
-	else {
-        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-        set_ux(0);
-    }
-#else
-    core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-#endif
-        printf("tid here %d\n", tid);
-        cpu_set_t mask;
-        CPU_ZERO(&mask);
-        CPU_SET(core_id, &mask);
-        sched_setaffinity(0, sizeof(mask), &mask);
-        sched_yield();
-
-        for (int i = 0; i < TST_NUM; i++) {
-                        pthread_mutex_lock(&global_lock_2);
-                         printf("cnt %d\n", global_cnt_a);
-                        global_cnt_a++;
-                        pthread_mutex_unlock(&global_lock_2);
-        }
-        return NULL;
+	for (int i = 0; i < TST_NUM; i++) {
+		pthread_mutex_lock(&global_lock_2);
+		global_cnt_a++;
+		pthread_mutex_unlock(&global_lock_2);
+	}
+	return NULL;
 }
 
 void *test_rwlock_routine(void *arg)
 {
-        int core_id = (int)(long)arg;
-        cpu_set_t mask;
-        CPU_ZERO(&mask);
-        CPU_SET(core_id, &mask);
-        sched_setaffinity(0, sizeof(mask), &mask);
-        sched_yield();
+	int core_id = (int)(long)arg;
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET(core_id, &mask);
+	sched_setaffinity(0, sizeof(mask), &mask);
+	sched_yield();
 
-        /* Reader Writer Lock */
+	/* Reader Writer Lock */
 	for (int i = 0; i < TST_NUM; i++) {
 		if (i % 3) {
 			if (i == 1)
 				pthread_rwlock_rdlock(&global_rwlock);
 			else
-				while (pthread_rwlock_tryrdlock(&global_rwlock) != 0);
-			if(global_cnt_a != global_cnt_b) {
-                                printf("RWLock test Failed!\n");
-                                exit(-1);
-                        }
+				while (pthread_rwlock_tryrdlock(&global_rwlock)
+				       != 0) ;
+			if (global_cnt_a != global_cnt_b) {
+				printf("RWLock test Failed!\n");
+				exit(-1);
+			}
 			pthread_rwlock_unlock(&global_rwlock);
 		} else {
 			if (global_cnt_a % 2)
 				pthread_rwlock_wrlock(&global_rwlock);
 			else
-				while (pthread_rwlock_trywrlock(&global_rwlock) != 0);
+				while (pthread_rwlock_trywrlock(&global_rwlock)
+				       != 0) ;
 			global_cnt_a++;
 			global_cnt_b++;
 			pthread_rwlock_unlock(&global_rwlock);
 		}
-                // if (i % (TST_NUM/10) == 0)
-                //         printf("Alive %d!\n", i);
+		// if (i % (TST_NUM/10) == 0)
+		//         printf("Alive %d!\n", i);
 	}
 
 }
 
 int main(void)
 {
-        pthread_t tid[THD_NUM];
-        int i = 0;
-         printf("sss1\n");
-        pthread_mutex_init(&global_lock_1, NULL);
-        pthread_mutex_init(&global_lock_2, NULL);
-        for (i = 0; i < THD_NUM; i ++)
-                pthread_create(&tid[i], NULL, test_mutex_routine, (void *)(long)i);
-         printf("sss2 %d\n", THD_NUM);
-        for (i = 0; i < THD_NUM; i ++)
-                pthread_join(tid[i], NULL);
-        printf("sss\n");
+	pthread_t tid[THD_NUM];
+	int i = 0;
+	pthread_mutex_init(&global_lock_1, NULL);
+	pthread_mutex_init(&global_lock_2, NULL);
+	for (i = 0; i < THD_NUM; i++)
+		pthread_create(&tid[i], NULL, test_mutex_routine,
+			       (void *)(long)i);
+	for (i = 0; i < THD_NUM; i++)
+		pthread_join(tid[i], NULL);
 
-        if (global_cnt_a != THD_NUM * TST_NUM) {
-                printf("Mutex FAILED!\n");
-                exit (-1);
-        } else {
-                printf("Mutex SUCC!\n");
-        }
+	if (global_cnt_a != THD_NUM * TST_NUM) {
+		printf("Mutex FAILED!\n");
+		exit(-1);
+	} else {
+		printf("Mutex SUCC!\n");
+	}
 
-        // global_cnt_a = 0;
-        // global_cnt_b = 0;
-        // pthread_rwlock_init(&global_rwlock, NULL);
-        // for (i = 0; i < THD_NUM; i ++)
-        //         pthread_create(&tid[i], NULL, test_rwlock_routine, (void *)(long)i);
-        // for (i = 0; i < THD_NUM; i ++)
-        //         pthread_join(tid[i], NULL);
+	// global_cnt_a = 0;
+	// global_cnt_b = 0;
+	// pthread_rwlock_init(&global_rwlock, NULL);
+	// for (i = 0; i < THD_NUM; i ++)
+	//         pthread_create(&tid[i], NULL, test_rwlock_routine, (void *)(long)i);
+	// for (i = 0; i < THD_NUM; i ++)
+	//         pthread_join(tid[i], NULL);
 
-        // if (global_cnt_a != global_cnt_b) {
-        //         printf("RWLock FAILED!\n");
-        //         exit (-1);
-        // } else {
-        //         printf("RWLock SUCC!\n");
-        // }
-        return 0;
+	// if (global_cnt_a != global_cnt_b) {
+	//         printf("RWLock FAILED!\n");
+	//         exit (-1);
+	// } else {
+	//         printf("RWLock SUCC!\n");
+	// }
+	return 0;
 }
-
-
