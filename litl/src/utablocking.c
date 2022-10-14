@@ -45,6 +45,10 @@ __thread int stack_pos = -1;
 #define STACK_SIZE 128
 __thread int loc_stack[STACK_SIZE];
 
+unsigned long debug_cnt_0 = 0;
+unsigned long debug_cnt_1 = 0;
+
+
 static inline uint32_t xor_random()
 {
 	static __thread uint32_t rv = 0;
@@ -158,7 +162,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 {
 	utablocking_node_t *succ, *next = me->next, *expected;
 	uint64_t spin;
-	uint64_t batch = (me->spin >> 48) & 0xFFFF;
 	utablocking_node_t *prevHead =
 	    (utablocking_node_t *) (me->spin & 0xFFFFFFFFFFFF);
 	utablocking_node_t *secHead, *secTail, *cur;
@@ -174,6 +177,7 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 				goto out;
 			}
 		} else {
+			debug_cnt_0 ++;
 			expected = me;
 			if (__atomic_compare_exchange_n
 			    (&impl->tail, &expected, prevHead->secTail, 0,
@@ -225,12 +229,15 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 	}
  find_out:
 	if (find) {
-		spin = (uint64_t) prevHead | ((batch + 1) << 48);	/* batch + 1 */
+		spin = (uint64_t) prevHead | 0x1000000000000;	/* batch + 1 */
 		/* Important: spin should not be 0 */
 		/* Release barrier */
 		__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
+		debug_cnt_1 ++;
 		goto out;
 	}
+
+	debug_cnt_0 ++;
 
 	/* Not find anything or batch */
 	if (prevHead) {
@@ -257,13 +264,15 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 	nested_level--;		/* Important! reduce nested level *after* release the lock */
 }
 
+#define DEFAULT_WAIT_TIME	1000000
+
 /* Using the unmodified MCS lock as the default underlying lock. */
 static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 				 utablocking_node_t * me)
 {
 	utablocking_node_t *tail;
 	uint64_t timestamp = rdtscp();
-	int random = xor_random() % 1000000;
+	int random = xor_random() % DEFAULT_WAIT_TIME;
 	int expected;
  reque:
 	me->next = NULL;
@@ -275,7 +284,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 		while (me->spin == 0) {
 			CPU_PAUSE();
 			if (me->status != S_READY
-			    && rdtscp() - timestamp > 1000000 + random) {
+			    && rdtscp() - timestamp > DEFAULT_WAIT_TIME + random) {
 				expected = S_ACTIVE;
 				if (__atomic_compare_exchange_n
 				    (&me->status, &expected, S_PARKED, 0,
@@ -379,6 +388,7 @@ void utablocking_application_init(void)
 
 void utablocking_application_exit(void)
 {
+	printf("Dcnt 0 %lu Dcnt 1 %lu\n", debug_cnt_0, debug_cnt_1);
 }
 
 int utablocking_cond_broadcast(utablocking_cond_t * cond)
