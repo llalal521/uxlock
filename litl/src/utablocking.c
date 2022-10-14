@@ -81,19 +81,24 @@ static inline int sys_futex(int *uaddr, int op, int val,
 	return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
 }
 
-static inline void park_node(volatile int *var, int target)
+static inline int park_node(volatile int *var, int target, int wakens)
 {
 	int ret = 0;
-	while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, target, NULL, 0,
+	struct timespec timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = wakens;
+
+	while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, NULL, NULL, 0,
 				0)) != 0) {
 		if (ret == -1 && errno != EINTR) {
-			if (errno == EAGAIN) {
+			if (errno == EAGAIN || errno == ETIMEDOUT) {
 				break;
 			}
 			perror("Unable to futex wait");
 			exit(-1);
 		}
 	}
+	return errno;
 }
 
 static inline void wake_node(volatile int *var)
@@ -271,6 +276,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 	uint64_t random = 0;	//xor_random() % DEFAULT_ACT_DURATION_TIME;
 	uint64_t act_duration;
 	int expected;
+	int ret;
 
 	me->next = NULL;
 	me->spin = 0;
@@ -294,7 +300,10 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 				     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
 					/* Add to the secondary queue */
 					me->actcnt = 0;
-					park_node(&me->status, S_PARKED);
+					ret = park_node(&me->status, S_PARKED, 100000);
+					if (ret == ETIMEDOUT) {
+						me->status == S_READY;
+					}
 					timestamp = rdtscp();
 				}
 			}
