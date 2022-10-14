@@ -112,6 +112,7 @@ void *test_mutex_routine(void *arg)
 
         for (int i = 0; i < TST_NUM; i++) {
                         pthread_mutex_lock(&global_lock_2);
+                         printf("cnt %d\n", global_cnt_a);
                         global_cnt_a++;
                         pthread_mutex_unlock(&global_lock_2);
         }
@@ -191,4 +192,5 @@ int main(void)
         // }
         return 0;
 }
+
 
