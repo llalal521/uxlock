@@ -194,8 +194,8 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 	succ = NULL;
 	expected_int = S_ACTIVE;
 	if (next->status == S_ACTIVE
-	    && __atomic_compare_exchange_n(&next->status, &expected_int, S_READY, 0,
-					   __ATOMIC_ACQ_REL,
+	    && __atomic_compare_exchange_n(&next->status, &expected_int,
+					   S_READY, 0, __ATOMIC_ACQ_REL,
 					   __ATOMIC_RELAXED)) {
 		find = 1;
 		cur = next;
@@ -258,7 +258,9 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 }
 
 #define DEFAULT_ACT_DURATION_TIME	1000000
-#define DEFUALT_ACT_REDUCATION		100
+#define MINIMAL_CHECK			1000
+#define ALLOW_BATCH			40
+#define DEFUALT_ACT_REDUCATION		(DEFAULT_ACT_DURATION_TIME/ALLOW_BATCH)
 
 /* Using the unmodified MCS lock as the default underlying lock. */
 static int __utablocking_lock_ux(utablocking_mutex_t * impl,
@@ -266,7 +268,7 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 {
 	utablocking_node_t *tail;
 	uint64_t timestamp = rdtscp();
-	uint64_t random = xor_random() % DEFAULT_ACT_DURATION_TIME;
+	uint64_t random = 0;	//xor_random() % DEFAULT_ACT_DURATION_TIME;
 	uint64_t act_duration;
 	int expected;
 
@@ -276,7 +278,11 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-		act_duration = DEFAULT_ACT_DURATION_TIME + random - me->actcnt * DEFUALT_ACT_REDUCATION;
+		act_duration =
+		    DEFAULT_ACT_DURATION_TIME + random -
+		    me->actcnt * DEFUALT_ACT_REDUCATION;
+		act_duration =
+		    act_duration < MINIMAL_CHECK ? MINIMAL_CHECK : act_duration;
 		while (me->spin == 0) {
 			CPU_PAUSE();
 			if (me->status != S_READY

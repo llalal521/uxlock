@@ -18,10 +18,10 @@ sleep $time
 echo "MCS    "
 $LITL_DIR/libmcs_spin_then_park.sh $LITL_DIR/bin/bench_block -t $thread -T $time -d $delay -s $cs > result
 $LOCAL_DIR/measure.sh ./result 20 20 0
-sleep $time
+sleep 1
 
 echo "proto  "
 $LITL_DIR/libutablocking_original.sh $LITL_DIR/bin/bench_block -t $thread -T $time -d $delay -s $cs > result
 $LOCAL_DIR/measure.sh ./result 20 20 0
-sleep $time
+sleep 1
 
