@@ -225,7 +225,7 @@ int mutexee_mutex_unlock(mutexee_mutex_t * m, mutexee_context_t * me)
 	}
 
 	/* We need to wake someone up */
-	m->l.b.contended = 0;
+	m->l.b.contende·d = 0;
 
 	MUTEXEE_ADAP(m->n_miss++;
 	    );
