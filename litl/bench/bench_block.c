@@ -181,14 +181,17 @@ void *thread_routine_transparent(void *arg)
         set_ux(0);
     }
 #else
-    core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+    	core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
 #endif
+
+#if 0
 	/* Bind core */
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET(core_id % PLAT_CPU_NUM, &mask);
 	sched_setaffinity(0, sizeof(mask), &mask);
 	sched_yield();
+#endif 
 	record_all[tid] = record_latency;
 	/* Start Barrier */
 	pthread_barrier_wait(&sig_start);
@@ -200,7 +203,6 @@ void *thread_routine_transparent(void *arg)
 			request_normal(tid);
 			duration = tt_endp - tt_startp;
 			record_latency[record_cnt] = duration;
-			// printf("duration %d record_cnt %d tid %d record_all %d %d\n", duration, record_cnt, tid, record_all[tid][record_cnt], record_all[tid][0]);
 			record_cnt++;
 		} else {
 			request_normal(tid);

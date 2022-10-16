@@ -15,7 +15,7 @@ typedef struct utablocking_node {
 
 	int status;
 	int actcnt; /* Cnt of continuesly being an active waiter */
-	char __pad2[pad_to_cache_line(sizeof(int) * 2)];
+ 	char __pad2[pad_to_cache_line(sizeof(int) * 2)];
 
 	volatile uint64_t spin;
 	char __pad3[pad_to_cache_line(sizeof(uint64_t))];

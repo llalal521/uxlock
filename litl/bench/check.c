@@ -23,7 +23,7 @@
 #endif
 
 #define TST_NUM 100000
-#define THD_NUM 40
+#define THD_NUM 10
 #define RECORD_FREQ 1
 
 #define NOP0 __asm__ __volatile__("\nnop\n");
@@ -47,7 +47,7 @@ int global_cnt_a = 0;
 int global_cnt_b = 0;
 
 #ifdef r74x
-#define AVALIABLE_CORE_NUM	10
+#define AVALIABLE_CORE_NUM	5
 int avaliable_core[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18 };
 #elif defined(apple)
 #define AVALIABLE_CORE_NUM	8
