@@ -49,6 +49,7 @@ volatile uint64_t *long_shared_variables_memory_area;
 volatile int short_number_of_shared_variables;
 volatile uint64_t *short_shared_variables_memory_area;
 __thread long long tt_startp, tt_endp;
+__thread long long tt_startp1, tt_endp1;
 __thread int long_cri = 1;
 int possibility = 4;
 int ratio = 0;
@@ -155,8 +156,6 @@ void request_normal(int tid)
 	else
 		access_variables(long_shared_variables_memory_area,
 				 long_number_of_shared_variables);
-	
-	// tt_endp = PAPI_get_real_cyc();
 	pthread_mutex_unlock(&global_lock);
 #ifdef	LIBASLBLOCK_INTERFACE
 	// epoch_end(0, 100000);

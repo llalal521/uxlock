@@ -63,6 +63,8 @@
 #include <uxactive.h>
 #elif defined(UTA)
 #include <uta.h>
+#elif defined(UTAMUTEXEE)
+#include <utamutexee.h>
 #elif defined(UTABLOCKING)
 #include <utablocking.h>
 #elif defined(UTAFTS)

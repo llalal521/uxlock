@@ -75,7 +75,7 @@ mutexee_mutex_t *mutexee_mutex_create(const pthread_mutexattr_t * attr)
 	mutexee_mutex_t *impl =
 	    (mutexee_mutex_t *) alloc_cache_align(sizeof(mutexee_mutex_t));
 	impl->l.u = 0;
-	impl->n_spins = MUTEXEE_SPIN_TRIES_LOCK_MIN;
+	impl->n_spins = 12000;
 	impl->n_spins_unlock = MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
 	impl->n_acq = 0;
 	impl->n_miss = 0;
@@ -159,38 +159,60 @@ int mutexee_mutex_lock(mutexee_mutex_t * m, mutexee_context_t * me)
 static inline void mutexee_mutex_training(mutexee_mutex_t * m)
 {
 	const size_t n_acq_curr = ++m->n_acq;
+	
 	if (__mutexee_unlikely((n_acq_curr & MUTEXEE_ADAP_EVERY) == 0)) {
-		if (!m->is_futex) {
-			if (m->n_miss > m->n_miss_limit) {
-#if MUTEXEE_PRINT == 1
-				printf
-				    ("[MUTEXEE] n_miss = %d  > %d :: switch to mutex\n",
-				     m->n_miss, m->n_miss_limit);
-#endif
-				m->n_spins = MUTEXEE_SPIN_TRIES_LOCK_MIN;
-				m->n_spins_unlock =
-				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
-				m->is_futex = 1;
-			}
-		} else {
-			unsigned int re = m->retry_spin_every;
-			if (m->is_futex++ == re) {
-				if (re < MUTEXEE_RETRY_SPIN_EVERY_MAX) {
-					re <<= 1;
-				}
-				m->retry_spin_every = re;
-				/* m->n_miss_limit++; */
-				if (m->n_miss_limit < MUTEXEE_FUTEX_LIM_MAX) {
-					m->n_miss_limit++;
-				}
-				m->is_futex = 0;
-#if MUTEXEE_PRINT == 1
-				printf("[MUTEXEE] TRY :: switch to spinlock\n");
-#endif
-				m->n_spins = MUTEXEE_SPIN_TRIES_LOCK;
-				m->n_spins_unlock = MUTEXEE_SPIN_TRIES_UNLOCK;
-			}
-		}
+		printf("miss %d\n", m->n_miss);
+		if (1) {
+// 			if (m->n_miss > 6 * m->n_miss_limit) {
+// 				if(m->n_spins >= MUTEXEE_SPIN_TRIES_LOCK_MIN) {
+// 					m->n_spins += 1000;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 				}
+// 			}
+// 			if (m->n_miss > 4 * m->n_miss_limit) {
+// 				if(m->n_spins >= MUTEXEE_SPIN_TRIES_LOCK_MIN) {
+// 					m->n_spins += 800;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 				}
+// 			}
+// 			if (m->n_miss > 2 * m->n_miss_limit) {
+// 				if(m->n_spins >= MUTEXEE_SPIN_TRIES_LOCK_MIN) {
+// 					m->n_spins += 200;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 				}
+// 			}
+// 			else if (m->n_miss > m->n_miss_limit) {
+// #if MUTEXEE_PRINT == 1
+// 				printf
+// 				    ("[MUTEXEE] n_miss = %d  > %d :: switch to mutex\n",
+// 				     m->n_miss, m->n_miss_limit);
+// #endif
+// 				if(m->n_spins >= MUTEXEE_SPIN_TRIES_LOCK_MIN) {
+// 					m->n_spins += 100;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 				}
+// 			}
+// 			else if(m->n_miss < (m->n_miss_limit/2)) {
+// 					m->n_spins -= 200;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 			}
+// 			else if(m->n_miss < (m->n_miss_limit/4)) {
+// 					m->n_spins -= 400;
+// 					m->n_spins_unlock =
+// 				    MUTEXEE_SPIN_TRIES_UNLOCK_MIN;
+// 					printf("new spin time %d\n", m->n_spins);
+// 			}
+		} 
 		m->n_miss = 0;
 	}
 }
