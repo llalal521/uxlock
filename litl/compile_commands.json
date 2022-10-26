@@ -1,0 +1,111 @@
+[
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-DLIBUTA_INTERFACE",
+            "-DLIBUTASCL_INTERFACE",
+            "-g",
+            "-o",
+            "bin/utaspc_bench",
+            "bench/bench.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/bench.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-g",
+            "-o",
+            "bin/rwbench",
+            "bench/rwbench.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/rwbench.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-g",
+            "-o",
+            "bin/check",
+            "bench/check.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/check.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-g",
+            "-o",
+            "bin/nest_bench",
+            "bench/nest_bench.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/nest_bench.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-DLIBUTA_INTERFACE",
+            "-g",
+            "-o",
+            "bin/nest_bench_uta",
+            "bench/nest_bench.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/nest_bench.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-DLIBUTA_INTERFACE",
+            "-g",
+            "-o",
+            "bin/uta_bench",
+            "bench/bench.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/bench.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-pthread",
+            "-O3",
+            "-Iinclude/",
+            "-g",
+            "-o",
+            "bin/bench_block",
+            "bench/bench_block.c"
+        ],
+        "directory": "/home/clear/uxlock/litl",
+        "file": "bench/bench_block.c"
+    }
+]

@@ -16,7 +16,7 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN= bench uxactive_bench uta_check asl_bench_block cst_bench_block nest_bench uta_bench bench_block nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
+BIN= bench uxactive_bench uta_check asl_bench_block  nest_bench uta_bench bench_block nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
 
@@ -65,9 +65,6 @@ $(BINDIR)/bench_block: bench/bench_block.c $(DIR) $(SOS)
 
 $(BINDIR)/asl_bench_block: bench/bench_block.c $(DIR) $(SOS)
 	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -DLIBASLBLOCK_INTERFACE -g  -laslblock_spin_then_park -o $(BINDIR)/asl_bench_block
-
-$(BINDIR)/cst_bench_block: bench/bench_block.c $(DIR) $(SOS)
-	gcc  bench/bench_block.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -lcst_original -pthread -g  -o $(BINDIR)/cst_bench_block
 
 $(BINDIR)/uxactive_bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUXACTIVE_INTERFACE -L./lib -luxactive_original  -g  -o $(BINDIR)/uxactive_bench

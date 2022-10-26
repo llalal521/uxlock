@@ -161,7 +161,6 @@ static inline void mutexee_mutex_training(mutexee_mutex_t * m)
 	const size_t n_acq_curr = ++m->n_acq;
 	
 	if (__mutexee_unlikely((n_acq_curr & MUTEXEE_ADAP_EVERY) == 0)) {
-		printf("miss %d\n", m->n_miss);
 		if (1) {
 // 			if (m->n_miss > 6 * m->n_miss_limit) {
 // 				if(m->n_spins >= MUTEXEE_SPIN_TRIES_LOCK_MIN) {

@@ -34,12 +34,12 @@
 #define PADDING        1	/* padd locks/conditionals to cache-line */
 #define FREQ_CPU_GHZ   2.8	/* core frequency in GHz */
 #define REPLACE_MUTEX  1	/* ovewrite the pthread_[mutex|cond] functions */
-#define MUTEXEE_SPIN_TRIES_LOCK       1024	/* spinning retries before futex */
+#define MUTEXEE_SPIN_TRIES_LOCK       8192	/* spinning retries before futex */
 #define MUTEXEE_SPIN_TRIES_LOCK_MIN   1024	/* spinning retries before futex */
 #define MUTEXEE_SPIN_TRIES_UNLOCK     384	/* spinning retries before futex wake */
 #define MUTEXEE_SPIN_TRIES_UNLOCK_MIN 128	/* spinning retries before futex wake */
 
-#define MUTEXEE_DO_ADAP             1
+#define MUTEXEE_DO_ADAP             0
 #define MUTEXEE_ADAP_EVERY          2047
 #define MUTEXEE_RETRY_SPIN_EVERY     8
 #define MUTEXEE_RETRY_SPIN_EVERY_MAX 32
