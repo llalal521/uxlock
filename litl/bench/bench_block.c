@@ -13,7 +13,7 @@
 #include <papi.h>
 
 /* Define Platform Here */
-#define r74x
+#define x86
 
 #ifdef r74x
 #define PLAT_CPU_NUM 40
@@ -22,7 +22,7 @@
 #elif defined(arm)
 #define PLAT_CPU_NUM 96
 #else
-#define PLAT_CPU_NUM 16
+#define PLAT_CPU_NUM 8
 #endif
 
 #define TST_NUM 1000000
@@ -102,8 +102,8 @@ int avaliable_core[] =
 	90, 91, 92, 93, 94, 95
 };
 #else
-#define AVALIABLE_CORE_NUM	16
-int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+#define AVALIABLE_CORE_NUM	8
+int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 #endif
 
 #ifdef	LIBUXACTIVE_INTERFACE
@@ -170,23 +170,24 @@ void *thread_routine_transparent(void *arg)
 	int64_t tid = (int64_t) arg;
 	int record_cnt = 0;
 	int i = 0, core_id;
-#ifdef UX_PRIORITY
-	if (tid < ux_num) {
-        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-        set_ux(1);
-    }
-	else {
-        core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-        set_ux(0);
-    }
-#else
+// #ifdef UX_PRIORITY
+// 	if (tid < ux_num) {
+//         core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+//         set_ux(1);
+//     }
+// 	else {
+//         core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
+//         set_ux(0);
+//     }
+// #else
     	core_id = avaliable_core[tid % AVALIABLE_CORE_NUM];
-#endif
+// #endif
 
 #if 0
 	/* Bind core */
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
+	printf("%d\n", core_id);
 	CPU_SET(core_id % PLAT_CPU_NUM, &mask);
 	sched_setaffinity(0, sizeof(mask), &mask);
 	sched_yield();

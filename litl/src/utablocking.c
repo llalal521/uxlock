@@ -33,8 +33,12 @@
 #define S_PARKED	0
 #define S_READY		1
 #define S_ACTIVE	2
+#define S_REQUEUE	3
 
+#define NOT_UX_THREAD 0
+#define IS_UX_THREAD 1
 __thread int nested_level = 0;
+__thread unsigned int uxthread = NOT_UX_THREAD;
 extern __thread unsigned int cur_thread_id;
 
 __thread int cur_loc = -1;
@@ -78,15 +82,19 @@ static inline int sys_futex(int *uaddr, int op, int val,
 	return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
 }
 
-static inline int park_node(volatile int *var, int target)
+static inline int park_node(volatile int *var, int target, int wakens)
 {
 	int ret = 0;
+	struct timespec timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = wakens;
 
-	while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, target, NULL, 0,
+	while ((ret = sys_futex((int *)var, FUTEX_WAIT_PRIVATE, NULL, &timeout, 0,
 				0)) != 0) {
+					
 		if (ret == -1 && errno != EINTR) {
-			if (errno == EAGAIN) {
-				break;
+			if (errno == EAGAIN || errno == ETIMEDOUT) {
+				return errno;
 			}
 			perror("Unable to futex wait");
 			exit(-1);
@@ -155,20 +163,17 @@ static void waking_queue(utablocking_mutex_t * impl, utablocking_node_t * me)
 	}
 }
 
-#define MAX_BATCH	10240
-
 static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 				       utablocking_node_t * me)
 {
-	utablocking_node_t *succ, *next = me->next, *expected;
+	utablocking_node_t *succ, *next = me->next, *expected, *tmp;
 	uint64_t spin;
-	uint64_t batch = (me->spin >> 48) & 0xFFFF;
 	utablocking_node_t *prevHead =
 	    (utablocking_node_t *) (me->spin & 0xFFFFFFFFFFFF);
 	utablocking_node_t *secHead, *secTail, *cur;
 	int expected_int;
-	int find = 0;
 
+	int find = 0;
 	if (!next) {
 		if (!prevHead) {
 			expected = me;
@@ -193,25 +198,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 		while (!(next = me->next))
 			CPU_PAUSE();
 	}
-
-#if 0
-	/* Pass to the secondary queue */
-	if (batch > MAX_BATCH && prevHead) {
-		/* Pass to secondary queue, update pointers */
-		succ = prevHead;
-		secHead = prevHead->next;
-		if (secHead) secHead->secTail = prevHead->secTail;
-		prevHead->next = me->next; /* not NULL */
-
-		/* Set spin to secHead */
-		spin = (uint64_t) secHead | 0x1000000000000;	/* batch = 1 */
-		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
-		wake_node(&succ->status);
-		goto out;
-	}
-#endif
-
-	/* Check very next */
 	succ = NULL;
 	expected_int = S_ACTIVE;
 	if (next->status == S_ACTIVE
@@ -223,7 +209,6 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 		goto find_out;
 	}
 
-	/* Start traverse the queue */
 	/* Next is not active, traverse the queue */
 	secHead = next;
 	secTail = next;
@@ -249,8 +234,18 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 	}
  find_out:
 	if (find) {
-		batch = batch + 1 < 0xFFF0 ? batch + 1 : 0xFFF0;
-		spin = (uint64_t) prevHead | (batch << 48);	/* batch + 1 */
+		if (prevHead && prevHead->status == S_ACTIVE) {
+				if (prevHead->next) {
+					prevHead->next->secTail =
+					    prevHead->secTail;
+				}
+
+				tmp = prevHead->next;
+				prevHead->status = S_REQUEUE;
+				prevHead = tmp;
+			}
+
+		spin = (uint64_t) prevHead | 0x1000000000000;	/* batch + 1 */
 		/* Important: spin should not be 0 */
 		/* Release barrier */
 		__atomic_store_n(&cur->spin, spin, __ATOMIC_RELEASE);
@@ -263,18 +258,18 @@ static void __utablocking_mutex_unlock(utablocking_mutex_t * impl,
 		prevHead->secTail->next = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier */
-		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
 		wake_node(&prevHead->status);
 		if (prevHead->next)
 			waking_queue(impl, prevHead->next);
+		__atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
 	} else {
 		succ = me->next;
 		spin = 0x1000000000000;	/* batch = 1 */
 		/* Release barrier after */
-		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
 		wake_node(&succ->status);
 		if (succ->next)
 			waking_queue(impl, succ->next);
+		__atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
 	}
  out:
 	nested_level--;		/* Important! reduce nested level *after* release the lock */
@@ -296,33 +291,45 @@ static int __utablocking_lock_ux(utablocking_mutex_t * impl,
 	uint64_t act_duration;
 	int expected;
 	int ret;
-
+	
+requeue:
+	me->status = S_ACTIVE;
 	me->next = NULL;
 	me->spin = 0;
-	me->status = S_ACTIVE;
 	tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
 	if (tail) {
 		__atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-		// act_duration =
-		//     DEFAULT_ACT_DURATION_TIME + random -
-		//     me->actcnt * DEFUALT_ACT_REDUCATION;
-		// act_duration =
-		//     act_duration < MINIMAL_CHECK ? MINIMAL_CHECK : act_duration;
-		act_duration = DEFAULT_ACT_DURATION_TIME;
+		act_duration =
+		    DEFAULT_ACT_DURATION_TIME + random -
+		    me->actcnt * DEFUALT_ACT_REDUCATION;
+		act_duration =
+		    act_duration < MINIMAL_CHECK ? MINIMAL_CHECK : act_duration;
 		while (me->spin == 0) {
 			CPU_PAUSE();
-			if (me->status != S_READY
-			    && rdtscp() - timestamp > act_duration) {
+			if (me->status == S_ACTIVE
+			    && rdtscp() - timestamp >
+			    DEFAULT_ACT_DURATION_TIME + random) {
 				expected = S_ACTIVE;
 				if (__atomic_compare_exchange_n
 				    (&me->status, &expected, S_PARKED, 0,
 				     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
 					/* Add to the secondary queue */
 					me->actcnt = 0;
-					ret = park_node(&me->status, S_PARKED);
+					ret = park_node(&me->status, S_PARKED, 1000000);
+					if (ret == ETIMEDOUT) {
+						// printf("sss %d\n", me->status);
+						me->status = S_ACTIVE;
+						// printf("sss1 %d\n", me->status);
+					}
 					timestamp = rdtscp();
 				}
+				
+					
 			}
+			if(me->status == S_REQUEUE) {
+					// printf("goto\n");
+					goto requeue;
+				}
 		}
 	}
 	MEMORY_BARRIER();
@@ -415,7 +422,7 @@ void utablocking_application_init(void)
 
 void utablocking_application_exit(void)
 {
-	printf("Dcnt 0 %lu Dcnt 1 %lu\n", debug_cnt_0, debug_cnt_1);
+	// printf("Dcnt 0 %lu Dcnt 1 %lu\n", debug_cnt_0, debug_cnt_1);
 }
 
 int utablocking_cond_broadcast(utablocking_cond_t * cond)
@@ -433,3 +440,11 @@ void utablocking_init_context(lock_mutex_t * impl,
 {
 	context->actcnt = 0;
 }
+
+/* New interfaces in Libutablocking */
+/* set a thread is uxthread or not */
+void set_ux(int is_ux)
+{
+	uxthread = is_ux;
+}
+
