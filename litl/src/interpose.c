@@ -67,6 +67,8 @@
 #include <utamutexee.h>
 #elif defined(UTABLOCKING)
 #include <utablocking.h>
+#elif defined(UTABIND)
+#include <utabind.h>
 #elif defined(UTAFTS)
 #include <utafts.h>
 #elif defined(UTASCL)
