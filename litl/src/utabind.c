@@ -8,7 +8,6 @@
 #include <sys/mman.h>
 #include <pthread.h>
 #include <assert.h>
-#include <utabind.h>
 #include <sched.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -137,6 +136,10 @@ utabind_mutex_t *utabind_mutex_create(const pthread_mutexattr_t * attr)
     utabind_mutex_t *impl = (utabind_mutex_t *)
         utabind_alloc_cache_align(sizeof(utabind_mutex_t));
     impl->tail = 0;
+    impl->pointers = (utabind_node_t **)utabind_alloc_cache_align(sizeof(utabind_node_t*) * 8); // alloc 8 pointers to nodes
+    for(int i = 0; i < 8; ++i){
+        impl->pointers[i] = NULL; //initialize
+    }
     return impl;
 }
 
@@ -291,46 +294,84 @@ static int __utabind_lock_ux(utabind_mutex_t * impl,
     uint64_t act_duration;
     int expected;
     int ret;
+    utabind_node_t *tmp;
     
 requeue:
-    me->status = S_ACTIVE;
-    me->next = NULL;
-    me->spin = 0;
-    tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
-    if (tail) {
-        __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-        act_duration =
-            DEFAULT_ACT_DURATION_TIME + random -
-            me->actcnt * DEFUALT_ACT_REDUCATION;
-        act_duration =
-            act_duration < MINIMAL_CHECK ? MINIMAL_CHECK : act_duration;
-        while (me->spin == 0) {
-            CPU_PAUSE();
-            if (me->status == S_ACTIVE
-                && rdtscp() - timestamp >
-                DEFAULT_ACT_DURATION_TIME + random) {
-                expected = S_ACTIVE;
-                if (__atomic_compare_exchange_n
-                    (&me->status, &expected, S_PARKED, 0,
-                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-                    /* Add to the secondary queue */
-                    me->actcnt = 0;
-                    ret = park_node(&me->status, S_PARKED, 1000000);
-                    if (ret == ETIMEDOUT) {
-                        // printf("sss %d\n", me->status);
-                        me->status = S_ACTIVE;
-                        // printf("sss1 %d\n", me->status);
+    tmp = NULL;
+    if(__atomic_compare_exchange_n(
+        &impl->pointers[cur_thread_id % 8], &tmp, me, 0,
+        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
+        me->status = S_ACTIVE;
+        me->next = NULL;
+        me->spin = 0;
+        tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
+        if (tail) {
+            __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
+            act_duration =
+                DEFAULT_ACT_DURATION_TIME + random -
+                me->actcnt * DEFUALT_ACT_REDUCATION;
+            act_duration =
+                act_duration < MINIMAL_CHECK ? MINIMAL_CHECK : act_duration;
+            while (me->spin == 0) {
+                CPU_PAUSE();
+                if (me->status == S_PARKED) {
+                    goto park;
+                }
+                if (me->status == S_ACTIVE
+                    && rdtscp() - timestamp >
+                    DEFAULT_ACT_DURATION_TIME + random) {
+                    expected = S_ACTIVE;
+                    if (__atomic_compare_exchange_n(
+                        &me->status, &expected, S_PARKED, 0,
+                        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+                        /* Add to the secondary queue */
+                        /* set map[cid] to null */
+                        __atomic_compare_exchange_n(
+                        &impl->pointers[cur_thread_id % 8], &me, NULL, 0,
+                        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+                        me->actcnt = 0;
+    park:
+                        ret = park_node(&me->status, S_PARKED, 1000000);
+                        if (ret == ETIMEDOUT) {
+                            tmp = NULL;
+                            if (__atomic_compare_exchange_n(
+                                &impl->pointers[cur_thread_id % 8], &tmp, me, 0,
+                                __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) 
+                                me->status = S_ACTIVE;
+                            else{
+                                expected = S_ACTIVE;
+                                if(__atomic_compare_exchange_n(
+                                    &impl->pointers[cur_thread_id % 8]->status
+                                    ,&expected ,S_ACTIVE ,0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
+                                    __atomic_exchange_n(&impl->pointers[cur_thread_id % 8], me, __ATOMIC_RELEASE);
+                                    me->status = S_ACTIVE;
+                                }
+                                else    goto park;
+                            }
+                        }
+                        timestamp = rdtscp();
                     }
-                    timestamp = rdtscp();
-                }
-                
                     
-            }
-            if(me->status == S_REQUEUE) {
-                    // printf("goto\n");
-                    goto requeue;
+                        
                 }
+                if(me->status == S_REQUEUE) {
+                        // printf("goto\n");
+                        goto requeue;
+                    }
+            }
         }
+        else{
+            me->status = S_READY;
+        }
+    }
+    else {
+        me->status = S_PARKED;
+        me->next = NULL;
+        me->spin = 0;
+        tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
+        __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
+        goto park;
     }
     MEMORY_BARRIER();
     return 0;

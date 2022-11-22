@@ -24,6 +24,8 @@ typedef struct utabind_node {
 typedef struct utabind_mutex {
     struct utabind_node *volatile tail;
     char __pad[pad_to_cache_line(sizeof(struct utabind_node*))];
+    struct utabind_node ** volatile pointers;
+    char __pad1[pad_to_cache_line(sizeof(struct utabind_node**))];
 } utabind_mutex_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef utabind_mutex_t lock_mutex_t;
