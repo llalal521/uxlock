@@ -19,6 +19,9 @@ typedef struct utabind_node {
 
     volatile uint64_t spin;
     char __pad3[pad_to_cache_line(sizeof(uint64_t))];
+
+    int thread_id;
+    char __pad4[pad_to_cache_line(sizeof(int))];
 } utabind_node_t __attribute__((aligned(L_CACHE_LINE_SIZE)));
 
 typedef struct utabind_mutex {

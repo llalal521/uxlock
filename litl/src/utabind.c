@@ -102,13 +102,21 @@ static inline int park_node(volatile int *var, int target, int wakens)
     return errno;
 }
 
-static inline void wake_node(volatile int *var)
+static inline void wake_node(utabind_mutex_t * impl, utabind_node_t *me)
 {
-    *var = S_READY;
-    int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, 1, NULL, 0, 0);
-    if (ret == -1) {
-        perror("Unable to futex wake");
-        exit(-1);
+    utabind_node_t *tmp = NULL;
+    if(__atomic_compare_exchange_n(
+        &impl->pointers[cur_thread_id % 8],&tmp , me, 0,
+        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
+        volatile int *var = &me->status;
+        int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, 1, NULL, 0, 0);
+        if (ret == -1) {
+            perror("Unable to futex wake");
+            exit(-1);
+        }
+    } else {
+        tmp = __atomic_exchange_n(&impl->pointers[cur_thread_id], me, __ATOMIC_RELEASE);
+        tmp->status = S_PARKED;
     }
 }
 
@@ -157,10 +165,10 @@ static int __utabind_mutex_trylock(utabind_mutex_t * impl,
 
 static void waking_queue(utabind_mutex_t * impl, utabind_node_t * me)
 {
-    int i = 10;
+    int i = 4;
     while (me && i != 0) {
         i--;
-        wake_node(&me->status);
+        wake_node(impl, me);
         me->status = S_ACTIVE;
         me = me->next;
     }
@@ -177,6 +185,9 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
     int expected_int;
 
     int find = 0;
+    __atomic_compare_exchange_n(
+        &impl->pointers[cur_thread_id % 8], &me, NULL, 0,
+        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
     if (!next) {
         if (!prevHead) {
             expected = me;
@@ -190,7 +201,7 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
             if (__atomic_compare_exchange_n
                 (&impl->tail, &expected, prevHead->secTail, 0,
                  __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
-                wake_node(&prevHead->status);
+                wake_node(impl, prevHead);
                 waking_queue(impl, prevHead->next);
                 __atomic_store_n(&prevHead->spin,
                          0x1000000000000,
@@ -261,7 +272,7 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
         prevHead->secTail->next = me->next;
         spin = 0x1000000000000; /* batch = 1 */
         /* Release barrier */
-        wake_node(&prevHead->status);
+        wake_node(impl, prevHead);
         if (prevHead->next)
             waking_queue(impl, prevHead->next);
         __atomic_store_n(&prevHead->spin, spin, __ATOMIC_RELEASE);
@@ -269,7 +280,7 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
         succ = me->next;
         spin = 0x1000000000000; /* batch = 1 */
         /* Release barrier after */
-        wake_node(&succ->status);
+        wake_node(impl, succ);
         if (succ->next)
             waking_queue(impl, succ->next);
         __atomic_store_n(&succ->spin, spin, __ATOMIC_RELEASE);
@@ -295,6 +306,7 @@ static int __utabind_lock_ux(utabind_mutex_t * impl,
     int expected;
     int ret;
     utabind_node_t *tmp;
+    me->thread_id = cur_thread_id;
     
 requeue:
     tmp = NULL;
