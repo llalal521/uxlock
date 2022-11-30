@@ -33,6 +33,7 @@
 #define S_READY     1
 #define S_ACTIVE    2
 #define S_REQUEUE   3
+#define S_PARKING   4
 
 #define NOT_UX_THREAD 0
 #define IS_UX_THREAD 1
@@ -105,8 +106,9 @@ static inline int park_node(volatile int *var, int target, int wakens)
 static inline void wake_node(utabind_mutex_t * impl, utabind_node_t *me)
 {
     utabind_node_t *tmp = NULL;
+    // printf("waking node %p\n", impl->pointers[me->thread_id % 8]);
     if(__atomic_compare_exchange_n(
-        &impl->pointers[cur_thread_id % 8],&tmp , me, 0,
+        &impl->pointers[me->thread_id % 8], &tmp , me, 0,
         __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
         volatile int *var = &me->status;
         int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, 1, NULL, 0, 0);
@@ -115,8 +117,20 @@ static inline void wake_node(utabind_mutex_t * impl, utabind_node_t *me)
             exit(-1);
         }
     } else {
-        tmp = __atomic_exchange_n(&impl->pointers[cur_thread_id], me, __ATOMIC_RELEASE);
-        tmp->status = S_PARKED;
+        tmp = __atomic_exchange_n(&impl->pointers[me->thread_id], me, __ATOMIC_RELEASE);
+        if(tmp != me)
+            tmp->status = S_PARKED;
+        else{
+            while(tmp->status == S_PARKING){
+                CPU_PAUSE();
+            }
+            volatile int *var = &me->status;
+            int ret = sys_futex((int *)var, FUTEX_WAKE_PRIVATE, 1, NULL, 0, 0);
+            if (ret == -1) {
+                perror("Unable to futex wake");
+                exit(-1);
+            }
+        }
     }
 }
 
@@ -177,23 +191,31 @@ static void waking_queue(utabind_mutex_t * impl, utabind_node_t * me)
 static void __utabind_mutex_unlock(utabind_mutex_t * impl,
                        utabind_node_t * me)
 {
+    // if(!me) printf("#################wrong#################\n");
     utabind_node_t *succ, *next = me->next, *expected, *tmp;
+    // printf("core id next: %d %p\n", cur_thread_id, next);
     uint64_t spin;
     utabind_node_t *prevHead =
         (utabind_node_t *) (me->spin & 0xFFFFFFFFFFFF);
     utabind_node_t *secHead, *secTail, *cur;
     int expected_int;
+    // printf("core id unlock %d, %d, %p\n", cur_thread_id % 8, cur_thread_id, me);
 
     int find = 0;
+    tmp = me;
+    // printf("core id before unlock: %d %p %p\n", cur_thread_id, impl->pointers[cur_thread_id % 8], me);
     __atomic_compare_exchange_n(
-        &impl->pointers[cur_thread_id % 8], &me, NULL, 0,
+        &impl->pointers[cur_thread_id % 8], &tmp, NULL, 0,
         __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+    // printf("core id unlock %d, %d, %p %p\n", cur_thread_id % 8, cur_thread_id, impl->pointers[cur_thread_id % 8], me);
     if (!next) {
+        // printf("core id next: %d %p\n", cur_thread_id, next);
         if (!prevHead) {
             expected = me;
             if (__atomic_compare_exchange_n
                 (&impl->tail, &expected, 0, 0, __ATOMIC_RELEASE,
                  __ATOMIC_RELAXED)) {
+                // printf("will out %d\n", cur_thread_id);
                 goto out;
             }
         } else {
@@ -214,10 +236,12 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
     }
     succ = NULL;
     expected_int = S_ACTIVE;
+    // printf("next is fucking what %p %d?\n", next, next->status);
     if (next->status == S_ACTIVE
         && __atomic_compare_exchange_n(&next->status, &expected_int,
                        S_READY, 0, __ATOMIC_ACQ_REL,
                        __ATOMIC_RELAXED)) {
+        // printf("find next!\n");
         find = 1;
         cur = next;
         goto find_out;
@@ -249,6 +273,7 @@ static void __utabind_mutex_unlock(utabind_mutex_t * impl,
  find_out:
     if (find) {
         if (prevHead && prevHead->status == S_ACTIVE) {
+                // printf("have secondary!\n");
                 if (prevHead->next) {
                     prevHead->next->secTail =
                         prevHead->secTail;
@@ -313,10 +338,13 @@ requeue:
     if(__atomic_compare_exchange_n(
         &impl->pointers[cur_thread_id % 8], &tmp, me, 0,
         __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
+        // printf("core id active %d, %d\n", cur_thread_id % 8, cur_thread_id);
+        // printf("core id active status: %d %p %p\n", cur_thread_id, impl->pointers[cur_thread_id % 8], me);
         me->status = S_ACTIVE;
         me->next = NULL;
         me->spin = 0;
         tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
+        // if(!tail)   printf("tail is null %d\n", cur_thread_id);
         if (tail) {
             __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
             act_duration =
@@ -329,22 +357,28 @@ requeue:
                 if (me->status == S_PARKED) {
                     goto park;
                 }
+                // if (me->status == S_READY) {
+                //     break; //get lock
+                // }
                 if (me->status == S_ACTIVE
                     && rdtscp() - timestamp >
                     DEFAULT_ACT_DURATION_TIME + random) {
                     expected = S_ACTIVE;
+                    // printf("core id gg %d, %d\n", cur_thread_id % 8, cur_thread_id);
                     if (__atomic_compare_exchange_n(
-                        &me->status, &expected, S_PARKED, 0,
+                        &me->status, &expected, S_PARKING, 0,
                         __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
                         /* Add to the secondary queue */
                         /* set map[cid] to null */
+                        utabind_node_t *tmp = me;
                         __atomic_compare_exchange_n(
-                        &impl->pointers[cur_thread_id % 8], &me, NULL, 0,
+                        &impl->pointers[cur_thread_id % 8], &tmp, NULL, 0,
                         __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
                         me->actcnt = 0;
+                        // printf("parking node %p\n", impl->pointers[cur_thread_id % 8]);
     park:
                         ret = park_node(&me->status, S_PARKED, 1000000);
-                        if (ret == ETIMEDOUT) {
+                        if (ret == ETIMEDOUT || ret == EAGAIN) {
                             tmp = NULL;
                             if (__atomic_compare_exchange_n(
                                 &impl->pointers[cur_thread_id % 8], &tmp, me, 0,
@@ -354,7 +388,7 @@ requeue:
                                 expected = S_ACTIVE;
                                 if(__atomic_compare_exchange_n(
                                     &impl->pointers[cur_thread_id % 8]->status
-                                    ,&expected ,S_ACTIVE ,0,
+                                    ,&expected ,S_PARKED ,0,
                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)){
                                     __atomic_exchange_n(&impl->pointers[cur_thread_id % 8], me, __ATOMIC_RELEASE);
                                     me->status = S_ACTIVE;
@@ -378,12 +412,16 @@ requeue:
         }
     }
     else {
+        // printf("core id park %d, %d\n", cur_thread_id % 8, cur_thread_id);
         me->status = S_PARKED;
         me->next = NULL;
         me->spin = 0;
         tail = __atomic_exchange_n(&impl->tail, me, __ATOMIC_RELEASE);
-        __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
-        goto park;
+        if(tail){
+            __atomic_store_n(&tail->next, me, __ATOMIC_RELEASE);
+            goto park;
+        }
+        else    me->status = S_READY;
     }
     MEMORY_BARRIER();
     return 0;

@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define r74x
+#define x86
 
 #ifdef r74x
 #define PLAT_CPU_NUM 40
@@ -19,7 +19,7 @@
 #elif defined(arm)
 #define PLAT_CPU_NUM 96
 #else
-#define PLAT_CPU_NUM 16
+#define PLAT_CPU_NUM 8
 #endif
 
 #define TST_NUM 100000
@@ -65,8 +65,8 @@ int avaliable_core[] =
 	90, 91, 92, 93, 94, 95
 };
 #else
-#define AVALIABLE_CORE_NUM	16
-int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+#define AVALIABLE_CORE_NUM	8
+int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 #endif
 
 #ifdef	LIBUXACTIVE_INTERFACE
@@ -83,6 +83,10 @@ int avaliable_core[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 
 #ifdef	LIBUTA_INTERFACE
 #include "libuta.h"
+#endif
+
+#ifdef	LIBUTABIND_INTERFACE
+#include "litbind.h"
 #endif
 
 void *test_mutex_routine(void *arg)
@@ -148,13 +152,13 @@ int main(void)
 	int i = 0;
 	pthread_mutex_init(&global_lock_1, NULL);
 	pthread_mutex_init(&global_lock_2, NULL);
-	for (i = 0; i < THD_NUM; i++)
+	for (i = 0; i < 16; i++)
 		pthread_create(&tid[i], NULL, test_mutex_routine,
 			       (void *)(long)i);
-	for (i = 0; i < THD_NUM; i++)
+	for (i = 0; i < 16; i++)
 		pthread_join(tid[i], NULL);
 
-	if (global_cnt_a != THD_NUM * TST_NUM) {
+	if (global_cnt_a != 16 * TST_NUM) {
 		printf("Mutex FAILED!\n");
 		exit(-1);
 	} else {
