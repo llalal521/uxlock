@@ -1,0 +1,2 @@
+Using LibUTABIND with waiting WAITING_ORIGINAL
+Mutex FAILED!

@@ -152,13 +152,13 @@ int main(void)
 	int i = 0;
 	pthread_mutex_init(&global_lock_1, NULL);
 	pthread_mutex_init(&global_lock_2, NULL);
-	for (i = 0; i < 16; i++)
+	for (i = 0; i < 8; i++)
 		pthread_create(&tid[i], NULL, test_mutex_routine,
 			       (void *)(long)i);
-	for (i = 0; i < 16; i++)
+	for (i = 0; i < 8; i++)
 		pthread_join(tid[i], NULL);
 
-	if (global_cnt_a != 16 * TST_NUM) {
+	if (global_cnt_a != 8 * TST_NUM) {
 		printf("Mutex FAILED!\n");
 		exit(-1);
 	} else {

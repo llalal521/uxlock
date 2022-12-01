@@ -16,7 +16,7 @@ export COND_VAR=0
 .SECONDARY: $(OBJS)
 .PHONY: all clean format
 
-BIN= bench uxactive_bench uta_check asl_bench_block  nest_bench uta_bench bench_block nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
+BIN= bench uxactive_bench uta_check bind_check asl_bench_block  nest_bench uta_bench bench_block nest_bench_uta check rwbench utafts_bench utascl_bench utaspc_bench
 
 BINPATH=$(addprefix $(BINDIR)/, $(BIN))
 
@@ -54,8 +54,8 @@ include/topology.h: include/topology.in
 	chmod a+x $@
 
 # micro-benchmarks
-$(BINDIR)/ux_cs_bench_uta: bench/ux_cs_bench.c $(DIR) $(SOS)
-	gcc bench/ux_cs_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE   -L./lib -luta_original -g -o $(BINDIR)/ux_cs_bench_uta
+# $(BINDIR)/ux_cs_bench_uta: bench/ux_cs_bench.c $(DIR) $(SOS)
+# 	gcc bench/ux_cs_bench.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE   -L./lib -luta_original -g -o $(BINDIR)/ux_cs_bench_uta
 
 $(BINDIR)/bench: bench/bench.c $(DIR) $(SOS)
 	gcc  bench/bench.c -lpapi -pthread -O3 -Iinclude/ -L./lib  -g  -o $(BINDIR)/bench
@@ -92,6 +92,9 @@ $(BINDIR)/check: bench/check.c $(DIR) $(SOS)
 
 $(BINDIR)/uta_check: bench/check.c $(DIR) $(SOS)
 	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTA_INTERFACE -L./lib -luta_original -g -o  $(BINDIR)/uta_check
+
+$(BINDIR)/bind_check: bench/check.c $(DIR) $(SOS)
+	gcc bench/check.c -lpapi -pthread -O3 -Iinclude/ -DLIBUTABIND_INTERFACE -L./lib -lutabind_original -g -o  $(BINDIR)/bind_check
 
 $(BINDIR)/rwbench: bench/rwbench.c $(DIR) $(SOS)
 	gcc bench/rwbench.c -lpapi -pthread -O3 -Iinclude/ -L./lib -g -o  $(BINDIR)/rwbench
